@@ -1,0 +1,322 @@
+File parser {
+  Fn ProcessReductionIdx(Idx, HasShift, Indices) = ~(If(HasShift, 65536, 0) + (Indices.FindIndex[It == Idx] || 0));
+  Fn ProcessActionIdx(Idx, Indices) =
+    If(Gte(Idx, 0), Idx,
+       ProcessReductionIdx(If(~Idx & 65536, ~Idx - 65536, ~Idx), (~Idx & 65536) != 0, Indices));
+
+  Def ActionRowSz = Lalr.NumTerminals - (Lalr.NumTerminals & 1);
+  Fn GetActionRows(Indices) = Lalr.States.Map[If(It.?UnambiguousNonExitAction, False, Tuple(ItIndex, It.Actions))]
+    .Filter[It]
+    .Map[Tuple(It.First, It.Second.Slice(0, Lalr.NumTerminals - 1).Map[ProcessActionIdx(It, Indices)])]
+    .GroupBy[It.Second]
+    .Map[Tuple(It.First.PadRight(ActionRowSz, 0), It.Second.Map[It.First])];
+
+  Fn DoAlignActionRows(States, Len) = States.Map[Tuple(PadTableTo(It.First, Len), It.Second)];
+  Fn AlignActionRows(States) = DoAlignActionRows(States, States.Reduce[TupleMax(MaxLengths(It.First), Acc); States.First.First.First.Map[0]]);
+  Fn MapActions(Actions) = Actions.Map[
+    If(It == Lalr.ErrorAction, "ERR, ",
+      If(Lte(It, -65536), "SR(" + (~It - 65536) + "), ",
+        If(Lt(It, 0), "R(" + ~It + "), ", "S(" + It + "), ")))];
+  Fn FormatActionRows(States) = AlignActionRows(States.Map[State: Tuple(MapActions(State.First).Chunk(16), State.Second)]);
+  Fn GetSpecialActions(Indices, Idx) = Lalr.States.Map[ProcessActionIdx(It.Actions.At(Idx), Indices)];
+
+  Fn GetReductionIndices() = Lalr.Reductions.Map[ItIndex];
+
+  Fn DoGetActionMap(Indices, Rows) = PadAllRightEq(Lalr.States.Map[State, StateIndex: If(State.?UnambiguousNonExitAction,
+    "U(" + ProcessActionIdx(State.UnambiguousNonExitAction, Indices) + "), ",
+    "A(" + (Rows.FindIndex[It.Second.Includes(StateIndex)] * ActionRowSz) + "), ")]);
+  Fn GetActionMap(Indices) = DoGetActionMap(Indices, GetActionRows(Indices));
+  Def AnyGotos = Lalr.States.Map[State: State.Gotos.Find[It.OnNonTerminal == "Any"].?DestinationState || 0];
+  Def AnysGotos = Lalr.States.Map[State: State.Gotos.Find[It.OnNonTerminal == "Anys"].?DestinationState || 0];
+  Def GotoRows = Lalr.States.Map[State, StateIdx: Tuple(StateIdx, Lalr.NonTerminals.Slice(2)
+    .Map[Nt: State.Gotos.Find[It.OnNonTerminal == Nt.Name].?DestinationState || 0])]
+    .GroupBy[It.Second]
+    .Map[Tuple(It.First, It.Second.Map[It.First])];
+  Def GotoMap = Lalr.States.Map[State, StateIndex: GotoRows.FindIndex[It.Second.Includes(StateIndex)]];
+
+  Fn Reduce(R) = [
+    { If [R.?NtType]
+      | s.reduce<%(R.NtType.Name)>(%(R.StackDepth), %(R.Nt.Index)%(Join("", R.Args.Map[", " + It.Value.Value])));
+    } ElseIf [R.?Nt] {
+      { If [R.Nt.Index == 0]
+        | s.reduce_any(%(R.StackDepth));
+      } ElseIf [R.StackDepth == 1] {
+        | s.reduce_1(%(R.Nt.Index));
+      } Else {
+        | s.reduce(%(R.StackDepth), %(R.Nt.Index));
+      }
+    } ElseIf [R.?StackDepth] {
+      { If [R.Type == ReductionType.Reduce]
+        | s.pop(%(R.StackDepth));
+      } ElseIf [R.Type == ReductionType.Rewrite] {
+        | s.rewind(%(R.StackDepth), %(R.TreeDepth));
+      }
+    }
+    ].Expand();
+
+  Fn ExpandReductionGroup(Group) = [
+    { If [DebugPrint]
+      | desc = "%(Group.Description)";
+    } Else {
+      | // %(Group.Description)
+    }
+    { ForEach [Info = Group.Reductions]
+    | // Reduction
+      { ForEach [Rel = Info.Statements]
+      | %(Rel);
+      }
+      { If [Info.Type == ReductionType.ReduceCopy]
+        { If [Info.Args.First.Value.Size || Info.?Nt.?Index]
+        | s.copy_reduce(%(Info.StackDepth), %(Info.Args.First.Value.StackOffset), %(Info.Args.First.Value.Size)%(If(Info.?Nt.?Index, ", " + Info.?Nt.?Index, "")));
+        } Else {
+        | s.copy_reduce(%(Info.StackDepth), %(Info.Args.First.Value.StackOffset));
+        }
+      } ElseIf [Info.Type == ReductionType.Stmt] {
+        | %(Info.Args.First.Value.Value);
+      } ElseIf [Info.Type == ReductionType.Reduce] {
+        | %(Reduce(Info))
+      } ElseIf [Info.Type == ReductionType.ChangeType] {
+        | %(Info.Args.First.Value.Value)->type = %(Info.Args.Second.Value.Value);
+        | s.rewind(%(Info.StackDepth), %(Info.TreeDepth));
+      } ElseIf [Info.Type == ReductionType.Rewrite] {
+        { ForEach [Step = Info.Args]
+        { Let [Value = Step.Value.Value]
+          { If [Step.Offset == 0 && Info.?Nt.?Index == 0]
+          | s.replace_top(%(Value));
+          } ElseIf [Lte(Step.Offset, 0)] {
+          | replace(s.stack[%(Step.Offset)].e, %(Value));
+          } ElseIf [Step.Offset == 1] {
+          | s.iter.e->set_input(s.iter.index, %(Value));
+          } Else {
+          | s.iter.e->set_input(s.iter.index + %(Step.Offset - 1), %(Value));
+          }
+        }}
+    { If [Info.Args.Size != 1 || Info.Args.First.Offset != 0 || Info.?Nt.?Index != 0]
+    | %(Reduce(Info))
+    }
+        { If [Info.ChangesLookahead && (Info.?Nt || Info.?NtType)]
+          | s.update_lookahead();
+        }
+      } ElseIf [Info.Type == ReductionType.Erase] {
+        | s.erase();
+      } ElseIf [Info.Type == ReductionType.Truncate] {
+        | s.iter.e->num_inputs = s.iter.index;
+        | s.update_lookahead();
+      } ElseIf [Info.Type == ReductionType.Pop] {
+        | s.pop(%(Info.StackDepth));
+      } Else {
+        | %(Assert(False, "Oh no RedType"))
+      }
+    }
+    ].Expand();
+
+  Path "lisp/air/passes/trs_simplify_pass.cpp"
+  [
+  | // GENERATED FILE - EDITS WILL BE LOST.
+  | #include "lisp/air/passes/air_passes.hpp"
+  | #include "lisp/air/air_package.hpp"
+  | #include "lisp/air/passes/trs_impl.hpp"
+  | #include "lisp/air/passes/trs_write_expr.hpp"
+  | #include "lisp/air/passes/air_pass.hpp"
+  | #include "lisp/air/passes/const_fold.hpp"
+  |
+  | namespace j::lisp::air::inline passes {
+  { Indent
+  | using namespace j::lisp::air::exprs;
+  | namespace ag = air::static_ids;
+  | namespace {
+  { Indent
+  | // Constants used by `trs_impl.hpp`.
+  | J_A(ND) constexpr inline bool  debug_print_enabled = %(If(DebugPrint, "true", "false"));
+  | J_A(ND) constexpr inline i32_t exit_token          = %(Lalr.ExitToken)U;
+  |
+  | #define ERR %(Lalr.ErrorAction)
+  | #define SR(N) ~(N|65536)
+  | #define R(N) ~N
+  | #define S(N) N
+  |
+  | J_A(ND) const i32_t gs[]{
+  { ForEach [R,I = PadTable(Tuple(Lalr.NonTerminals.Slice(2).Map[It.Name]).Append(GotoRows.Map[It.First.Map[It + ","]]))]
+  | %(If(I == 0, "// ", "   "))%(Join(" ", R))
+  }
+  | };
+  | J_A(ND) const i32_t * const gotos[]{
+  { ForEach [R = GotoMap.Map[("gs + " + (It * (Lalr.NonTerminals.Size - 2)) + ",").PadRight(9)].Chunk(8)]
+  |   %(Join(" ", R))
+  }
+  | };
+  |
+  | J_A(ND) const i32_t any_gotos[]{
+  { ForEach [R = PadAllRightEq(AnyGotos.Map[It + ","]).Chunk(24)]
+  |   %(Join(" ", R))
+  }
+  | };
+  |
+  | J_A(ND) const i32_t anys_gotos[]{
+  { ForEach [R = PadAllRightEq(AnysGotos.Map[It + ","]).Chunk(24)]
+  |   %(Join(" ", R))
+  }
+  | };
+  |
+  { Let [RedIndices = GetReductionIndices()]
+  | J_A(ND) const i32_t exit_actions[]{
+  { ForEach [R = PadTable(MapActions(GetSpecialActions(RedIndices, Lalr.ExitToken)).Chunk(16))]
+  |   %(Join("", R))
+  }
+  | };
+  |
+  | J_A(ND) const i32_t as[]{
+  { ForEach [R = FormatActionRows(GetActionRows(RedIndices))]
+  { ForEach [R2 = R.First]
+  |   %(Join("", R2))
+  }}
+  | };
+  | #define A(IDX) IDX
+  | #define U(IDX) (IDX << 1) + 1
+  | J_A(ND) const i32_t actions[]{
+  { ForEach [R = GetActionMap(RedIndices).Chunk(8)]
+  |   %(Join(" ", R))
+  }
+  | };
+  | #undef A
+  | #undef U
+  }
+  { ForEach [T = Lalr.NonTerminalDataTypes]
+  |
+  | // Size: %(T.Size)
+  | // Used by: %(Join(", ", Lalr.NonTerminals.Filter[It.?DataType == T].Map[It.Name]))
+  | struct alignas(8) J_TYPE_HIDDEN %(T.Name) final {
+  { If [T.Fields]
+  |   J_A(NI) static void format(const void * J_NOT_NULL data) noexcept {
+  { Indent 4
+  { If [T.Fields.Size == 1]
+  { Let [Type = T.Fields.First.Type]
+  { If [!Type.Format]
+  |     J_DEBUG_INL("{}", reinterpret_cast<const %(T.Name)*>(data)->%(T.Fields.First.Name));
+  } Else {
+  { Let [It = "reinterpret_cast<const " + T.Name + "*>(data)->" + T.Fields.First.Name]
+  | %(Type.Format.Expand())
+  }}}} Else {
+  | const %(T.Name) & d = *reinterpret_cast<const %(T.Name)*>(data);
+  { Let [CurFmt = ""]
+  { Let [CurVals = ""]
+  { ForEach [F,FIndex = T.Fields]
+  { Let [Next = T.Fields.MaybeAt(FIndex + 1)]
+  { If [F.Type.Format]
+  { Let [Type = F.Type]
+  { Let [It = "d." + F.Name]
+  | %(Type.Format.Expand())
+  { If [Next]
+  { If [Next.Type.Format]
+  | J_DEBUG_INL(" ");
+  } Else {
+  { Set [CurFmt = " "] }
+  }}
+  }}
+  } Else {
+  { Set [CurFmt = CurFmt + If(Next, "{} ", "{}")] }
+  { Set [CurVals = CurVals + ", d." + F.Name] }
+  { If [!Next || Next.Type.Format]
+  | J_DEBUG_INL("%(CurFmt)"%(CurVals));
+  { Set [CurFmt = ""] }
+  { Set [CurVals = ""] }
+  }}}}}}}}
+  |   }
+  |
+  { ForEach [F = T.Fields]
+  |   %(F.Type.Type) %(F.Name)%(If(F.Type.?DefaultValue, " = " + F.Type.DefaultValue, ""));
+  }
+  | };
+  }}
+  |
+  | constexpr nt_info nt_infos[]{
+  { ForEach [Nt = Lalr.NonTerminals]
+  |   { "%(Nt.Name)"%(If(Nt.?DataType && Nt.DataType.Fields, ", &" + Nt.DataType.Name + "::format ", "")) }, // %(Nt.Index)
+  }
+  | };
+  |
+  | void reduce(parser_state & s, trs_writer & w, i32_t action) {
+  { Indent
+  | using enum expr_type;
+  | using et = expr_type;
+  | const bool is_shift_reduce = action & (1 << 16);
+  | if (is_shift_reduce) {
+  |   s.shift(%(If(DebugPrint, "s.stack->state", "0")));
+  |   action -= 1 << 16;
+  | }
+  |
+  { If [DebugPrint]
+  | const char *desc = nullptr;
+  }
+  | switch (action) {
+  { ForEach [R,RIndex = Lalr.Reductions]
+  | case %(RIndex):%(If(R.Precomputes || R.HasStatements, " {", ""))
+  { Indent
+  { ForEach [Prec = R.Precomputes]
+  | %(Prec.Type) %(Prec.Name) = %(Prec.Value);
+  }
+  { If [R.ReductionGroups.Size != 1 || R.ReductionGroups.First.?Predicate]
+  { ForEach [Group,Idx = R.ReductionGroups]
+  | %(If(Idx, "} else ", ""))%(If(Group.?Predicate, "if (" + Group.Predicate.Value + ") {", "{"))
+  { Indent
+  | %(ExpandReductionGroup(Group))
+  }}
+  | %("}")
+  } Else {
+  | %(ExpandReductionGroup(R.ReductionGroups.First))
+  }}
+  | %(If(R.Precomputes || R.HasStatements, "} ", ""))break;
+  }
+  | default: J_FAIL("Unexpected reduction {}.", action);
+  | }
+  { If [DebugPrint]
+  | if (desc) {
+  |   s.dump_stacks("{#bright_blue}{}{/}{#bright_green}{}{/}", is_shift_reduce ? "Shift-" : "", desc);
+  | }
+  }}
+  | }
+  }
+  | }
+  |
+  | void trs_simplify(j::mem::bump_pool & pool, expr * J_NOT_NULL root) {
+  |   parser_state s{pool, root};
+  |   trs_writer w{pool};
+  |   do {
+  |     i32_t action;
+  |     if (s.lookahead == exit_token) {
+  |       action = exit_actions[s.stack->state];
+  |     } else {
+  |       action = actions[s.stack->state];
+  |       if (action & 1) {
+  |         action >>= 1;
+  |       } else {
+  |         action = as[action + s.lookahead];
+  |         if (J_UNLIKELY(action == ERR)) {
+  |           s.fail("Error action");
+  |         }
+  |       }
+  |     }
+  |     if (action >= 0) {
+  |       s.shift(action);
+  { If [DebugPrint]
+  |       s.dump_stacks("{#bright_blue}Shift{/}");
+  }
+  |     } else {
+  |       reduce(s, w, ~action);
+  |     }
+  |   } while (!s.done);
+  { If [DebugPrint]
+  |   J_DEBUG("After rewrite {}", *s.root);
+  }
+  |   s.check_empty();
+  | }
+  |
+  | static void apply_trs_simplify_pass(air_pass_context & ctx) {
+  |   trs_simplify(*ctx.pool, ctx.fn->body);
+  | }
+  }
+  |
+  |   const air_pass trs_simplify_pass{apply_trs_simplify_pass, "trs-simplify", "Run term replacement", true};
+  | }
+  ]
+}

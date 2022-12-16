@@ -1,0 +1,88 @@
+NonTerminal LAndOrIn(~Fx ~Collect Val:Imm = Undef);
+
+
+Rule lnot|to_bool:$1(Const($3 $2)) -> Const($3 Fold($1 $2));
+Rule eq|neq:$1(Const($3 $2) Const($5 $4)) -> Const(($3 $+! $5).AsPreFx() Fold($1.Type $2 $4));
+                                                                                     #Const(($2 == $4) ^^ $1.Is(neq));
+
+# Rule [Precedence 2] lor|land(Const:$1) -> !Copy $1;
+
+Rule LAndOr($1 $2 $3 $4) -> ApplyFx(Construct($4 $2) $1);
+
+# Rule LOr($1 $2)
+#   -> ApplyFx(lor($1) $2);
+
+  # -> [Pred $2.HasValue] ApplyFx(Construct($1 $3 MkConst($2)) $4)
+  #-> ApplyFx(Construct($1 $2) $3);
+
+Rule *LAndOrIn {
+  [NotAtExit] Const($2 $1)
+    -> [Pred CurTerm.Is(lor) == $1.IsTruthy] {
+      ! Val = $1;
+      ! Fx +=! $2;
+      !Truncate;
+    } -> {
+      ! Val = $1;
+      ! Fx +=! $2;
+    };
+  # EmptyVec($1) -> [Pred CurTerm.Is(lor)] {
+  #   ! Fx +=! $1;
+  #   # ! Val = empty-vec;
+  #   !Truncate;
+  #   };
+  $1 -> {
+    ! Collect += ApplyFxClear($1 Fx);
+    ! Val = Undef;
+  };
+  LAndOr($4 $3 $2 $1) -> [Pred CurTerm.Type == $1] {
+    ! Val = $2;
+    ! Collect += $3;
+    ! Fx +=! $4;
+  } -> {
+    ! Val = $2;
+    ! Collect += ApplyFx(Construct($1 $3) $4);
+    }; # -> ! Collect += ApplyFx(Construct($1 $2) $3);
+};
+
+Rule land|lor:$1(LAndOrIn($2 $3 $4))
+  # -> [Pred $1.HasValue] LOr($2 + $4 + const($1) $3)
+  -> [Pred $3.Empty] Const($2.AsPreFx() If($4.HasValue $4 If($1.Is(land) True False))) # $4.PreFx($3)
+  -> [Pred $3.Single] $3.First.PreFx($2)
+  -> LAndOr($2 $3 $4 $1.Type);
+
+
+TestSuite "Lisp - AIR - TRS - Logic" {
+  Alias a land;
+  Alias o lor;
+  Alias n lnot;
+  Alias c const;
+
+  Test "(not false)" a(n(False)) -> c(True);
+  Test "(not true)" a(n(True)) -> c(False);
+
+  Test "(and)" a() -> c(True);
+  Test "(or)" o() -> c(False);
+
+  Test "(and true)" a(True) -> c(True);
+  Test "(or true)" o(True) -> c(True);
+  Test "(and false)" a(False) -> c(False);
+  Test "(or false)" o(False) -> c(False);
+  Test "(and nil)" a(c(Nil)) -> c(Nil);
+  Test "(or nil)" o(c(Nil)) -> c(Nil);
+
+  Test "(and 11)" a(11) -> 11;
+  Test "(or 11)" o(11) -> 11;
+  Test "(or false 11)" o(False 11) -> 11;
+  Test "(or True 11)" o(True 11) -> c(True);
+
+  Test "(and nil (or (wr a 2) (wr b 1)))" a(c(Nil) o(w1 w2)) -> c(Nil);
+  Test "(or True (and (wr a 1) (wr a 2)))" o(True 11 a(w1 w2)) -> c(True);
+
+  Test "(or (or a b) (or c d))" o(o(w1 w2) o(w3 w4)) -> o(w1 w2 w3 w4);
+  Test "(or a (or b c) d)" o(w1 o(w2 w3) w4) -> o(w1 w2 w3 w4);
+  Test "(or a Nil (or b False c) false d)" o(w1 c(Nil) o(w2 False w3) False w4) -> o(w1 w2 w3 w4);
+  # Test "(and a True (and b 0 c) empty-vec d)" a(w1 True a(w2 0 w3) empty-vec w4) -> a(w1 w2 w3 w4);
+
+  Test "(or (and a b) (or c d))" o(a(w1 w2) o(w3 w4)) -> o(a(w1 w2) w3 w4);
+  Test "(and (or a b) (and c d))" a(o(w1 w2) a(w3 w4)) -> a(o(w1 w2) w3 w4);
+}

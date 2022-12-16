@@ -1,0 +1,162 @@
+Fn Lengths(X) = X.Map[It.Size];
+Fn MaxLength(X) = Max(X.Map[It.Size]);
+Fn PadAllRight(X, Len) = X.Map[It.PadRight(Len)];
+Fn PadAllRightEq(X) = PadAllRight(X, MaxLength(X));
+Fn TupleMax(A, B) = A.Map[Max(It, B.MaybeAt(ItIndex) || 0)];
+Fn MaxLengths(X) = X.Reduce[Acc.Map[Len, Index: Max(Len, It.MaybeAt(Index).?Size || 0)]; X.First.Map[0]];
+Fn PadTableTo(X, Lens) = X.Map[It.Map[It.PadRight(Lens.MaybeAt(ItIndex) || 0)]];
+Fn PadTable(X) = PadTableTo(X, MaxLengths(X));
+Fn MakeRows(X, Len) = PadTable(X.Chunk(Len)).Map[Join(" ", It).Trim()];
+Fn FormatTable(X) = [
+  { ForEach [Row = PadTable(X)]
+  | %(Join(" ", Row))
+  }
+  ].Expand();
+
+Fn DoxyParamsL(Params, Len) = [
+  { ForEach [P1 = Params]
+  { ForEach [P = P1]
+  | %(P.First.PadRight(Len)) %(P.Second)
+  }}
+  ].Expand();
+Fn DoxyParams(Params) = If(Params, DoxyParamsL(Params.Map[P: If(P.Second.IsTuple, P.Second.Map[Tuple(If(ItIndex == 0, "@param " + P.First, ""), It)], Tuple(Tuple("@param " + P.First, P.Second)))], Max(Params.Map[It.First.Size + 7])), "");
+
+Def ExprNameMaxLen = Max(0, Terms.Map[It.Name.Size]);
+
+Def ExprTitle = [| `%(Expr.Name)`%(If(Expr.DocTitle, " - " + Expr.DocTitle, "")) |];
+Def ExprType = [| expr_type::%(Expr.Name) |];
+Def ExprInfo = [
+  { If [Expr.DocSummary]
+  |
+  | %(Expr.DocSummary)
+  { If [Expr.DocBody]
+  |
+  | %(Expr.DocBody)
+  }
+  }
+  ];
+Def OpSpec = [-
+  { If [Op.@Spec == Tuple(Rep.Any, ImmType.Any)]
+  | Any
+  } Else {
+  { If [Op.@Spec.First == Rep.NotRange && Tuple(ImmType.I64, ImmType.F32, ImmType.FnRef, ImmType.Closure).Includes(Op.@Spec.Second)]
+  | %(Op.@Spec.Second.Name)
+  } Else {
+  | %(Op.@Spec.First.Name) %(Op.@Spec.Second.Name)
+  }}
+  -];
+Def OpTitle = [
+  {- If [Op.IsInput]
+  | %(Op.Type.Name) %(Op.Name): %(OpSpec)%(If(Op.DocTitle, " - " + Op.DocTitle, ""))
+  } Else {-
+  | %(If(Op.IsConst, "Const", "Data")) %(Op.Type.Name) %(Op.Name)%(If(Op.DocTitle, " - " + Op.DocTitle, ""))
+  }
+  ];
+Def OpInfo = [
+  { If [Op.DocSummary]
+  | %(Op.DocSummary)
+  { If [Op.DocBody]
+  | %(Op.DocBody)
+  }}
+  ];
+
+Def OpDocComment = [
+  { DocComment
+  | %(OpTitle)
+  { If [Op.DocBody]
+  | %(OpInfo)
+  }}
+  ];
+Def OpDocCommentListItem = [
+  | - %(OpTitle)
+  { IndentInner 2
+  | %(OpInfo)
+  }
+  ];
+
+Def ExprDocComment = [
+  { DocComment
+  | %(ExprTitle)
+  | %(ExprInfo)
+  { ForEach [Op = Expr.Members]
+  |
+  | %(OpTitle)
+  | %(OpInfo)
+  }}
+  ];
+
+Def ExprDocCommentNoOps = [
+  { DocComment
+  | %(ExprTitle)
+  | %(ExprInfo)
+  }
+  ];
+
+Def ExprDocCommentListItem = [
+  |   - %(ExprTitle)
+  {- If [Expr.DocSummary]
+  { IndentInner 4
+  | %(Expr.DocSummary)
+  }}
+  ];
+
+Def ExprSetDocComment = [
+  { DocComment
+  { ForEach [Expr = Exprs]
+  | %(ExprDocCommentListItem)
+  }
+  }
+  ];
+
+Def ExprSetCppComment = [
+  { Comment
+  { ForEach [Expr = Exprs]
+  | %(ExprTitle)
+  }
+  }
+  ];
+
+Def OpRef = [
+  { If [Op.HasDynamicSize || Op.HasDynamicOffset]
+  | %(ExprAccess)%(Op.Name)()
+  } Else {
+  | %(ExprAccess)%(Op.Name)
+  }
+  ];
+
+Def RawExprRef = [|(*%(RawExprPtr))|];
+Def RawExprPtr = [|(&%(RawExprRef))|];
+Def ExprRef = [|(*%(ExprPtr))|];
+Def ExprPtr = [|(&%(ExprRef))|];
+Def IsConst = False;
+Def ConstPrefix = [|%(If(IsConst, "const ", ""))|];
+Def NumInputs = [|%(RawExprAccess)num_inputs|];
+Def MaxInputs = [|%(RawExprAccess)max_inputs|];
+Def NumDynInputs = [| %(If(Expr.NumStaticInputs, "(" + NumInputs.Expand() + " - " + Expr.NumStaticInputs + ")", NumInputs)) |];
+Def MaxDynInputs = [| %(If(Expr.NumStaticInputs, "(" + MaxInputs.Expand() + " - " + Expr.NumStaticInputs + ")", MaxInputs)) |];
+Def DynInputsBegin = [| reinterpret_cast<%(ConstPrefix)exprs::input*>(%(ExprPtr) + 1) |];
+Def NumDynInputsNoParens = [|%(If(Expr.NumStaticInputs, NumInputs.Expand() + " - " + Expr.NumStaticInputs, NumInputs))|];
+
+Def OpPtrByOffset = [-
+  { If [!Op.StaticOffset && !Op.HasDynamicOffset]
+  | reinterpret_cast<%(ConstPrefix)%(Op.TypeName)*>(%(BaseExprPtr) + 1)
+  } Else {-
+  | j::add_bytes<%(ConstPrefix)%(Op.TypeName)*>(%(ExprPtr), %(Op.StaticOffset + ExprSize)U
+  {- If [Op.HasDynamicOffset]
+  |  + %(Op.DynamicOffsetMember.SizeExpr)
+  -}
+  | )
+  -}
+  -];
+
+Def OpPtrByBaseOffset = [-
+  { If [!Op.StaticOffset && !Op.HasDynamicOffset]
+  | reinterpret_cast<%(ConstPrefix)%(Op.TypeName)*>(%(BaseExprPtr) + 1)
+  } Else {-
+  | j::add_bytes<%(ConstPrefix)%(Op.TypeName)*>(%(BaseExprPtr) + 1, %(Op.StaticOffset)U
+  {- If [Op.HasDynamicOffset]
+  |  + %(Op.DynamicOffsetMember.SizeExpr)
+  -}
+  | )
+  -}
+  -];

@@ -1,0 +1,521 @@
+## GraphViz background
+#
+# Border color of the table in GraphViz dump
+TermAttr DebugBg           { DefaultGet "#000000" }
+
+## Force result display
+#
+# If true, the result will be shown even when unused.
+TermAttr DebugForceResult  { DefaultGet False     }
+
+## Hide result type and representation.
+#
+# If true, the result type and representation will not be shown.
+TermAttr DebugHideResult   { DefaultGet False     }
+
+## Hide result representation
+#
+# If true, the result representation will not be shown.
+TermAttr DebugHideRep      { DefaultGet False     }
+
+## Hide result types
+#
+# If true, the result type will not be shown.
+TermAttr DebugHideType     { DefaultGet False     }
+
+## Hide inputs
+#
+# If true, the input names and reps will not be shown.
+TermAttr DebugHideInputs   { DefaultGet False     }
+
+## Show result on first table row.
+#
+# If true, the result will be shown on the same line with title.
+TermAttr DebugInlineResult { DefaultGet False     }
+
+## Debug title code
+#
+# Custom code to generate title row.
+TermAttr DebugCustomTitle;
+
+## Operand format string
+#
+# Only values with `DebugFmt` or `DebugValue` are formatted.
+OpAttr DebugFmt            { DefaultGet "{}" }
+
+## Operand debug value getter
+#
+# Value to pass when formatting with `DebugFmt`.
+OpAttr DebugValue          { DefaultGet [|%(OpRef)|]   }
+
+## Operand debug title
+#
+# Title to show for operand in GraphViz table.
+OpAttr DebugName           { DefaultGet [|"%(Op.DocTitle)"|]   }
+
+TermAttr DebugStyle { DefaultGet "white" }
+TermAttr ShortName;
+Fn GetShortName(Term) = Term.?@ShortName || Term.Name;
+
+
+###############################################################################
+# Constants
+###############################################################################
+
+Extend nop {
+  @DebugStyle "gray"
+  @DebugHideResult True
+  @DebugBg "#A4A4A4"
+}
+
+Extend ld_const {
+  @ShortName "const"
+  @DebugStyle "light_gray"
+  @DebugBg   "#809A9A"
+  @DebugHideResult True
+  @DebugCustomTitle [
+    | auto imm = %(ExprAccess)const_val;
+    | switch (imm.type()) {
+    | case imm_nil:
+    |   tbl.push_row(s_nil, (s::string[]){"Nil"});
+    |   break;
+    | case imm_bool:
+    |   tbl.push_row(imm.is_true() ? s_true : s_false, (s::string[]){imm.is_true() ? "True" : "False"});
+    |   break;
+    | case imm_sym_id:
+    |   tbl.push_row(s_sym, (s::string[]){s::format("<b>'</b>{}", imm)});
+    |   break;
+    | case imm_i64:
+    |   tbl.push_flex_row((g::table_column[]){
+    |     { s::format("{}", imm), s_i64 },
+    |     { s::format("{}", %(RawExprAccess)result.reps), s_result },
+    |   });
+    |   break;
+    | default:
+    |     tbl.push_flex_row((g::table_column[]){
+    |       { s::format("Const {}", imm.type()), s_title },
+    |       { s::format("{}", %(RawExprAccess)result.reps), s_result },
+    |     });
+    |     tbl.push_row(s_default, (s::string[]){ s::format("{}", imm) });
+    |   break;
+    | }
+    ]
+}
+
+
+###############################################################################
+# Function arguments
+###############################################################################
+
+Extend fn_arg {
+  @ShortName         "arg"
+  @DebugStyle "green"
+  @DebugCustomTitle [
+    | auto arg_idx = %(ExprAccess)index;
+    | g::table_column cols[3]{
+    |   {s::format("<font point-size=\\"2.75\\"><br/></font>&nbsp;Arg <b>#{}</b>", arg_idx), s_arg, "r"},
+    |   {s::format("<font point-size=\\"2.5\\"><br/></font>&nbsp;&nbsp;{}&nbsp;", ((const exprs::fn_body*)fn->body)->vars()[arg_idx]->name), s_arg_name},
+    |   {static_cast<strings::string &&>(result), s_result},
+    | };
+    | tbl.push_flex_row(cols, %(RawExprAccess)result.types == taggable_imm_type ? 2U : 3U);
+    ]
+  @DebugBg "#3400E0"
+  @DebugHideResult True
+}
+
+Extend fn_rest_arg {
+  @ShortName         "rest"
+  @DebugStyle "bright_green"
+  @DebugBg "#C0B090"
+  @DebugInlineResult True
+}
+
+Extend fn_sc_arg {
+  @DebugStyle "bright_green"
+  @ShortName         "sc-arg"
+  @DebugBg "#B8D0A4"
+  @DebugInlineResult True
+}
+
+
+
+###############################################################################
+# Progn-likes
+###############################################################################
+
+Extend fn_body {
+  @ShortName         "body"
+  @DebugStyle        "cyan"
+  @DebugBg           "#A0A0C0"
+  @DebugHideInputs   True
+  @DebugInlineResult True
+}
+
+Extend progn {
+  @DebugBg           "#A0A0A0"
+  @DebugStyle        "light_gray"
+  @DebugHideInputs   True
+  @DebugInlineResult True
+}
+
+Extend prog1 {
+  @DebugBg           "#A0A0A0"
+  @DebugStyle        "light_gray"
+  @DebugHideInputs   True
+  @DebugInlineResult True
+}
+
+Extend let {
+  @DebugStyle        "bright_green"
+  @DebugBg           "#C0C0A4"
+  @DebugHideInputs   True
+  @DebugInlineResult True
+}
+
+
+
+###############################################################################
+# Local control flow (excluding short-circuit)
+###############################################################################
+
+Extend b_if {
+  @DebugStyle        "magenta"
+  @ShortName         "if"
+  @DebugBg           "#7878B4"
+}
+
+Extend do_until {
+  @DebugStyle        "bright_magenta"
+  @ShortName         "until"
+  @DebugBg           "#780EB4"
+  @DebugForceResult  True
+  @DebugHideInputs   True
+  @DebugInlineResult True
+}
+
+
+###############################################################################
+# Variable access (lex and mem)
+###############################################################################
+
+Extend lex_rd {
+  @ShortName "lex-rd"
+  @DebugStyle        "green"
+  @DebugBg          "#00A800"
+  @DebugForceResult True
+  @DebugCustomTitle [|push_lex_title(tbl, "lex-rd", result, %(ExprAccess)var);|]
+}
+
+Extend lex_rd_bound {
+  @DebugStyle        "bright_green"
+  @ShortName "bnd-rd"
+  @DebugBg          "#50A800"
+  @DebugForceResult True
+  @DebugCustomTitle [|push_lex_title(tbl, "bnd-rd", result, %(ExprAccess)var);|]
+}
+
+Extend lex_wr {
+  @DebugStyle        "bright_yellow"
+  @ShortName "lex-wr"
+  @DebugBg          "#B85800"
+  @DebugForceResult True
+  @DebugHideInputs  True
+  @DebugCustomTitle [|push_lex_title(tbl, "lex-wr", result, %(ExprAccess)var);|]
+}
+
+Extend lex_wr_bound {
+  @DebugStyle        "bright_yellow"
+  @ShortName "bnd-wr"
+  @DebugBg          "#C88010"
+  @DebugForceResult True
+  @DebugHideInputs  True
+  @DebugCustomTitle [|push_lex_title(tbl, "bnd-wr", result, %(ExprAccess)var);|]
+}
+
+Extend sym_val_rd {
+  @DebugStyle        "bright_green"
+  @ShortName         "sym-rd"
+  @DebugBg           "#70A400"
+  @DebugHideRep      True
+  @DebugInlineResult True
+  Op var { @DebugFmt "{}" }
+}
+Extend sym_val_wr {
+  @DebugStyle        "bright_yellow"
+  @ShortName         "sym-wr"
+  @DebugBg           "#C86800"
+  @DebugHideRep      True
+  @DebugInlineResult True
+  Op var { @DebugFmt "{}" }
+}
+
+
+###############################################################################
+# Assertions
+###############################################################################
+
+Extend type_assert {
+  @DebugStyle        "bright_red"
+  @ShortName       "type!"
+  @DebugBg         "#F80000"
+  @DebugHideInputs True
+  @DebugHideResult True
+  @DebugCustomTitle [
+    |   tbl.push_row((g::table_column[]){{s::format("<b>{}!</b>", %(ExprAccess)types), s_title, "op0"}});
+    ]
+}
+
+Extend dyn_type_assert {
+  @DebugStyle        "bright_red"
+  @ShortName       "dtype!"
+  @DebugBg         "#D89A18"
+  @DebugHideResult True
+  @DebugHideInputs True
+  @DebugCustomTitle [
+    |   tbl.push_row((g::table_column[]){{s::format("<b>{}!</b>", %(ExprAccess)types), s_title, "op0"}});
+    ]
+}
+
+
+
+###############################################################################
+# Integer arithmetic
+###############################################################################
+
+Extend ineg {
+  @DebugStyle        "bright_cyan"
+  @DebugHideType     True
+  @DebugInlineResult True
+}
+
+Extend iadd {
+  @DebugStyle        "bright_cyan"
+  @DebugHideType     True
+  @DebugInlineResult True
+}
+
+Extend isub {
+  @DebugStyle        "bright_cyan"
+  @DebugHideType     True
+  @DebugInlineResult True
+}
+
+Extend imul {
+  @DebugStyle        "bright_cyan"
+  @DebugHideType     True
+  @DebugInlineResult True
+}
+
+Extend idiv {
+  @DebugStyle        "bright_cyan"
+  @DebugHideType     True
+  @DebugInlineResult True
+}
+
+
+
+###############################################################################
+# Boolean operators (incl. short-circuiting control flow)
+###############################################################################
+
+Extend land {
+  @DebugStyle        "bright_blue"
+  @ShortName         "and"
+  @DebugHideResult   True
+}
+
+Extend lor {
+  @DebugStyle        "bright_blue"
+  @ShortName         "or"
+  @DebugHideResult   True
+}
+
+Extend lnot {
+  @DebugStyle        "bright_blue"
+  @ShortName         "not"
+  @DebugHideResult   True
+  @DebugInlineResult True
+}
+
+Extend to_bool {
+  @DebugStyle        "bright_blue"
+  @ShortName         "to-bool"
+  @DebugHideResult   True
+  @DebugInlineResult True
+}
+
+
+
+###############################################################################
+# Comparison operators
+###############################################################################
+
+Extend eq {
+  @DebugStyle        "yellow"
+  @DebugHideResult   True
+  @DebugInlineResult True
+}
+
+Extend neq {
+  @DebugStyle        "yellow"
+  @DebugHideResult   True
+  @DebugInlineResult True
+}
+
+
+###############################################################################
+# Representation handling
+###############################################################################
+
+Extend tag {
+  @DebugStyle        "green"
+  @DebugBg           "#00FFD0"
+  @DebugHideRep      True
+  @DebugHideInputs   True
+  @DebugInlineResult True
+}
+
+Extend untag {
+  @DebugStyle        "yellow"
+  @DebugBg           "#C800E8"
+  @DebugHideRep      True
+  @DebugHideInputs   True
+  @DebugInlineResult True
+}
+
+Extend as_range {
+  @DebugStyle        "green"
+  @ShortName         "as-rng"
+  @DebugBg      "#B8B800"
+  @DebugHideRep True
+}
+
+Extend as_vec {
+  @DebugStyle        "green"
+  @ShortName         "as-vec"
+  @DebugBg      "#D8A020"
+  @DebugHideRep True
+}
+
+
+###############################################################################
+# Function calls
+###############################################################################
+
+Extend call {
+  @DebugStyle        "bright_red"
+  @DebugBg "#999900"
+}
+
+Extend full_call {
+  @DebugStyle        "bright_red"
+  @ShortName         "f-call"
+  @DebugBg      "#999900"
+  @DebugHideRep True
+  Op fn { @DebugFmt "{}" }
+}
+
+
+###############################################################################
+# Vector operations
+###############################################################################
+
+Extend vec {
+  @DebugStyle        "bright_magenta"
+  @DebugHideType     True
+  @DebugInlineResult True
+}
+
+Extend make_vec {
+  @DebugStyle        "bright_magenta"
+  @ShortName         "mk-vec"
+  @DebugHideType     True
+  @DebugInlineResult True
+}
+
+Extend vec_append {
+  @DebugStyle        "bright_magenta"
+  @ShortName         "append"
+  @DebugHideType     True
+  @DebugInlineResult True
+}
+
+Extend vec_build {
+  @DebugStyle        "bright_magenta"
+  @ShortName         "quasi"
+  @DebugHideType     True
+  @DebugInlineResult True
+}
+
+
+
+###############################################################################
+# Range operations
+###############################################################################
+
+Extend range_length {
+  @DebugStyle        "magenta"
+  @ShortName         "length"
+  @DebugHideType     True
+  @DebugInlineResult True
+}
+
+Extend range_get {
+  @DebugStyle        "magenta"
+  @ShortName         "at"
+  @DebugHideRep True
+}
+Extend range_set {
+  @DebugStyle        "bright_red"
+  @ShortName         "rng-set"
+  @DebugHideRep True
+}
+
+Extend range_copy {
+  @DebugStyle        "magenta"
+  @ShortName         "rng-cp"
+  @DebugHideType     True
+  @DebugInlineResult True
+}
+
+
+
+###############################################################################
+# Closure handling
+###############################################################################
+
+Extend act_rec_alloc {
+  @DebugStyle        "bright_red"
+  @ShortName         "mk-act"
+  @DebugHideType     True
+  @DebugInlineResult True
+  Op index { @DebugFmt "#{}" }
+}
+
+Extend act_rec_wr {
+  @DebugStyle        "bright_red"
+  @ShortName         "act-wr"
+  @DebugInlineResult True
+  Op var { @DebugValue [| %(OpRef)->name |] }
+}
+
+Extend act_rec_rd {
+  @DebugStyle        "bright_green"
+  @ShortName         "act-rd"
+  @DebugHideInputs True
+  @DebugInlineResult True
+  Op var { @DebugValue [| %(OpRef)->name |] }
+}
+
+Extend act_rec_parent {
+  @DebugStyle        "bright_green"
+  @ShortName         "act-par"
+  @DebugHideResult True
+  @DebugHideInputs True
+}
+
+Extend closure {
+  @DebugStyle        "bright_cyan"
+  @DebugBg "#303099"
+  @DebugHideType True
+}

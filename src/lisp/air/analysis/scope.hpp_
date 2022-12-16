@@ -1,0 +1,261 @@
+#pragma once
+
+#include "mem/bump_pool.hpp"
+#include "lisp/air/air_var.hpp"
+#include "lisp/air/exprs/expr.hpp"
+
+namespace j::lisp::air::analysis {
+struct fork_record;
+struct join_record;
+
+enum class access_type {
+  none,
+  write,
+  read,
+  define,
+  undefine,
+  fork,
+  join,
+};
+
+struct var_access {
+  access_type type = access_type::none;
+  exprs::expr * node = nullptr;
+  var_access * prev_access = nullptr;
+  var_access * next_access = nullptr;
+
+  J_INLINE_GETTER_NONNULL join_record * as_join_record() noexcept;
+  J_INLINE_GETTER_NONNULL fork_record * as_fork_record() noexcept;
+  J_INLINE_GETTER_NONNULL const join_record * as_join_record() const noexcept;
+  J_INLINE_GETTER_NONNULL const fork_record * as_fork_record() const noexcept;
+};
+
+struct var_access_iterator final {
+  var_access * it = nullptr;
+
+  J_INLINE_GETTER_NONNULL var_access * operator->() const noexcept {
+    return it;
+  }
+
+  J_INLINE_GETTER var_access & operator*() const noexcept {
+    J_ASSUME_NOT_NULL(it);
+    return *it;
+  }
+
+  J_ALWAYS_INLINE var_access_iterator & operator++() noexcept {
+    J_ASSUME_NOT_NULL(it);
+    it = it->next_access;;
+    return *this;
+  }
+
+  J_ALWAYS_INLINE var_access_iterator & operator--() noexcept {
+    J_ASSUME_NOT_NULL(it);
+    it = it->prev_access;;
+    return *this;
+  }
+
+  var_access_iterator operator++(int) noexcept {
+    var_access_iterator result{it};
+    return operator++(), result;
+  }
+
+  var_access_iterator operator--(int) noexcept {
+    var_access_iterator result{it};
+    return operator--(), result;
+  }
+
+  J_INLINE_GETTER bool operator==(const var_access_iterator &) const noexcept = default;
+};
+
+struct fork_branch_record final{
+  var_access * next_record = nullptr;
+};
+
+struct fork_record final : var_access {
+  u8_t num_branches = 0U;
+  fork_record * prev_fork = nullptr;
+  join_record * matching_join = nullptr;
+
+  J_INLINE_GETTER_NONNULL fork_branch_record * branches_begin() noexcept {
+    return reinterpret_cast<fork_branch_record *>(this + 1);
+  }
+
+  J_INLINE_GETTER_NONNULL fork_branch_record * branches_end() noexcept {
+    return branches_begin() + num_branches;
+  }
+
+  J_INLINE_GETTER_NONNULL const fork_branch_record * branches_begin() const noexcept {
+    return reinterpret_cast<const fork_branch_record *>(this + 1);
+  }
+
+  J_INLINE_GETTER_NONNULL const fork_branch_record * branches_end() const noexcept {
+    return branches_begin() + num_branches;
+  }
+
+  J_INLINE_GETTER fork_branch_record & branch(u32_t branch_index) noexcept {
+    return reinterpret_cast<fork_branch_record *>(this + 1)[branch_index];
+  }
+
+  J_INLINE_GETTER const fork_branch_record & branch(u32_t branch_index) const noexcept {
+    return reinterpret_cast<const fork_branch_record *>(this + 1)[branch_index];
+  }
+};
+
+struct join_branch_record final {
+  var_access * prev_record = nullptr;
+};
+
+struct join_record final : var_access {
+  u8_t num_branches = 0U;
+  fork_record * matching_fork = nullptr;
+
+  J_INLINE_GETTER_NONNULL join_branch_record * branches_begin() noexcept {
+    return reinterpret_cast<join_branch_record *>(this + 1);
+  }
+
+  J_INLINE_GETTER_NONNULL join_branch_record * branches_end() noexcept {
+    return branches_begin() + num_branches;
+  }
+
+  J_INLINE_GETTER_NONNULL const join_branch_record * branches_begin() const noexcept {
+    return reinterpret_cast<const join_branch_record *>(this + 1);
+  }
+
+  J_INLINE_GETTER_NONNULL const join_branch_record * branches_end() const noexcept {
+    return branches_begin() + num_branches;
+  }
+
+  J_INLINE_GETTER join_branch_record & branch(u32_t branch_index) noexcept {
+    return reinterpret_cast<join_branch_record *>(this + 1)[branch_index];
+  }
+
+  J_INLINE_GETTER const join_branch_record & branch(u32_t branch_index) const noexcept {
+    return reinterpret_cast<const join_branch_record *>(this + 1)[branch_index];
+  }
+};
+
+join_record * var_access::as_join_record() noexcept {
+  J_ASSUME(type == access_type::join);
+  return static_cast<join_record*>(this);
+}
+fork_record * var_access::as_fork_record() noexcept {
+  J_ASSUME(type == access_type::fork);
+  return static_cast<fork_record*>(this);
+}
+const join_record * var_access::as_join_record() const noexcept {
+  J_ASSUME(type == access_type::join);
+  return static_cast<const join_record*>(this);
+}
+const fork_record * var_access::as_fork_record() const noexcept {
+  J_ASSUME(type == access_type::fork);
+  return static_cast<const fork_record*>(this);
+}
+
+struct current_path_entry final {
+  exprs::expr * node = nullptr;
+  u8_t index = 0U;
+  current_path_entry * parent;
+
+  current_path_entry(exprs::expr * J_NOT_NULL node, current_path_entry * parent) noexcept
+    : node(node),
+      parent(parent)
+  {
+  }
+};
+
+/// Class for tracking the current scope when visiting the expression tree.
+struct scope_tracker final {
+  j::mem::bump_pool * temp_pool = nullptr;
+
+  u32_t num_vars = 0U;
+
+  var_access ** nodes = nullptr;
+
+  fork_record ** latest_forks = nullptr;
+
+  join_record ** latest_joins = nullptr;
+
+  current_path_entry * path = nullptr;
+
+  explicit scope_tracker(u32_t num_vars)
+
+  void insert_access(var_access * J_NOT_NULL acc, u32_t var_index, exprs::expr * J_NOT_NULL node, access_type type) {
+    J_ASSUME(var_index < num_vars);
+    acc->type = type;
+    acc->node = node;
+    acc->prev_access = nodes[var_index];
+    if (nodes[var_index]) {
+      nodes[var_index]->next_access = acc;
+    }
+    nodes[var_index] = acc;
+  }
+
+  J_RETURNS_NONNULL var_access * push_access(u32_t var_index, exprs::expr * J_NOT_NULL node, access_type type) {
+    var_access * acc = &temp_pool->emplace<var_access>();
+    insert_access(acc, var_index, node, type);
+    return acc;
+  }
+
+  J_INLINE_GETTER_NONNULL var_access * visit_lex_read(u32_t var_index, exprs::expr * J_NOT_NULL node) {
+    return push_access(var_index, node, access_type::read);
+  }
+
+  J_INLINE_GETTER_NONNULL var_access * visit_lex_write(u32_t var_index, exprs::expr * J_NOT_NULL node) {
+    return push_access(var_index, node, access_type::write);
+  }
+
+  J_INLINE_GETTER_NONNULL var_access * visit_define(u32_t var_index, exprs::expr * J_NOT_NULL node) {
+    return push_access(var_index, node, access_type::define);
+  }
+
+  J_INLINE_GETTER_NONNULL var_access * visit_undefine(u32_t var_index, exprs::expr * J_NOT_NULL node) {
+    return push_access(var_index, node, access_type::undefine);
+  }
+
+  void enter_if(exprs::expr * J_NOT_NULL if_node) {
+    J_ASSUME(if_node->type == expr_type::b_if);
+    path = &temp_pool->emplace<current_path_entry>(if_node, path);
+  }
+
+  void enter_if_branch(u8_t index) {
+    J_ASSUME_NOT_NULL(path, path->node);
+    J_ASSUME(path->node->type == expr_type::b_if);
+    J_ASSUME(index < 2);
+    path->index = index;
+  }
+
+  void exit_if() {
+    J_ASSUME_NOT_NULL(path, path->node);
+    J_ASSUME(path->node->type == expr_type::b_if);
+    path = path->parent;
+  }
+
+
+  J_RETURNS_NONNULL fork_record * enter_if_branch(u8_t branch_index, u32_t var_index, exprs::expr * J_NOT_NULL node) {
+    J_ASSUME(branch_index < 2);
+
+    if (latest_forks[var_index] && latest_forks[var_index]->node == node) {
+        latest_forks[var_index]->branch(branch_index)->node = node;
+        return latest_forks[var_index];
+      }
+
+      fork_record * rec = &temp_pool->emplace_with_padding<fork_record>(sizeof(fork_branch_record) * 2);
+      insert_access(rec, var_index, node, access_type::fork);
+      rec->prev_fork = latest_forks[var_index];
+      latest_forks[var_index] = rec;
+      return rec;
+    }
+
+    void exit_if(exprs::expr * J_NOT_NULL node) {
+      for (u32_t i = 0; i < num_vars; ++i) {
+        if (latest_forks[i]->node == node) {
+          fork_record * fork = latest_forks[i];
+          join_record * rec = &temp_pool->emplace_with_padding<join_record>(sizeof(join_branch_record) * 2);
+          fork->matching_join = rec;
+          rec->matching_fork = fork;
+          latest_forks[i] = fork->prev_fork;
+        }
+      }
+    }
+  };
+}

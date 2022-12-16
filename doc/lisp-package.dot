@@ -1,0 +1,191 @@
+digraph g {
+  compound=true;
+
+  graph
+  [
+   fontsize=18
+   labelloc="t"
+   label=""
+   rankdir="LR"
+   fontname="Hack"
+   penwidth=2
+  ];
+
+  node
+  [
+   style="filled"
+   penwidth=2
+   fillcolor="white"
+   shape="plain"
+   fontname="Hack"
+  ];
+
+  ratio=auto;
+
+  package
+  [
+    label=<
+    <table cellspacing="0" border="2" cellborder="1" cellpadding="6">
+    <tr><td bgcolor="black"><font color="white">Package</font></td></tr>
+    <tr><td align="left">Local Id</td></tr>
+    <tr><td port="names" align="left">Names</td></tr>
+    <tr><td port="packages" align="left">Imported packages</td></tr>
+    <tr><td port="imports" align="left">Imported symbols</td></tr>
+    <tr><td port="defines" align="left">Defined symbols</td></tr>
+    <tr><td port="segments" align="left">Segments</td></tr>
+    </table>
+    >
+  ];
+
+  subgraph cluster_segs {
+    margin=16;
+    label="Segments"
+    rank="same";
+
+    code_seg
+    [
+      label=<
+      <table cellspacing="0" border="2" cellborder="1" cellpadding="6">
+      <tr><td port="title" bgcolor="black"><font color="white">Native Code Seg</font></td></tr>
+      <tr><td align="left">Size</td></tr>
+      <tr><td port="func_defs" align="left">Func defs</td></tr>
+      <tr><td port="relocs" align="left">Relocs</td></tr>
+      </table>
+      >
+    ];
+
+    data_seg
+    [
+      label=<
+      <table cellspacing="0" border="2" cellborder="1" cellpadding="6">
+      <tr><td port="title" bgcolor="black"><font color="white">Data Seg</font></td></tr>
+      <tr><td align="left">Size</td></tr>
+      <tr><td port="relocs" align="left">Relocs</td></tr>
+      <tr><td port="val_defs" align="left">Val defs</td></tr>
+      </table>
+      >
+      ];
+
+    bss_seg
+    [
+      label=<
+      <table cellspacing="0" border="2" cellborder="1" cellpadding="6">
+      <tr><td bgcolor="black"><font color="white">BSS Seg</font></td></tr>
+      <tr><td align="left">Size</td></tr>
+      <tr><td port="val_defs" align="left">Val defs</td></tr>
+      </table>
+      >
+      ];
+    }
+
+  name
+  [
+   label=<
+   <table cellspacing="0" border="2" cellborder="1" cellpadding="6">
+    <tr><td bgcolor="black"><font color="white">Name</font></td></tr>
+    <tr><td align="left">Local ID</td></tr>
+    <tr><td align="left">Name</td></tr>
+   </table>
+   >
+  ];
+
+  package_import
+  [
+   label=<
+   <table cellspacing="0" border="2" cellborder="1" cellpadding="6">
+    <tr><td port="title" bgcolor="black"><font color="white">Package import</font></td></tr>
+    <tr><td align="left">Local ID</td></tr>
+    <tr><td align="left"><i>Package</i></td></tr>
+   </table>
+   >
+  ];
+
+  sym_import
+  [
+   label=<
+   <table cellspacing="0" border="2" cellborder="1" cellpadding="6">
+    <tr><td port="title" bgcolor="black"><font color="white">Sym import</font></td></tr>
+    <tr><td port="package" align="left">Package import</td></tr>
+    <tr><td align="left">Local ID</td></tr>
+    <tr><td align="left"><i>Symbol definition</i></td></tr>
+   </table>
+   >
+  ];
+
+  sym_def
+  [
+   label=<
+   <table cellspacing="0" border="2" cellborder="1" cellpadding="6">
+    <tr><td port="title" bgcolor="black"><font color="white">Sym definition</font></td></tr>
+    <tr><td align="left">Local ID</td></tr>
+    <tr><td port="func_def" align="left">Func def</td></tr>
+    <tr><td port="val_def" align="left">Val def</td></tr>
+    <tr><td align="left">Visibility</td></tr>
+   </table>
+   >
+  ];
+
+  val_def
+  [
+   label=<
+   <table cellspacing="0" border="2" cellborder="1" cellpadding="6">
+    <tr><td port="title" bgcolor="black"><font color="white">Val definition</font></td></tr>
+    <tr><td align="left">Offset</td></tr>
+    <tr><td port="sym_def" align="left">Sym def</td></tr>
+    <tr><td align="left"><i>Ptr</i></td></tr>
+   </table>
+   >
+  ];
+
+  func_def
+  [
+   label=<
+   <table cellspacing="0" border="2" cellborder="1" cellpadding="6">
+    <tr><td port="title" bgcolor="black"><font color="white">Func definition</font></td></tr>
+    <tr><td align="left">Start offset</td></tr>
+    <tr><td align="left">Offset</td></tr>
+    <tr><td align="left">Size</td></tr>
+    <tr><td port="sym_def" align="left">Sym def</td></tr>
+    <tr><td align="left"><i>Ptr</i></td></tr>
+   </table>
+   >
+  ];
+
+  reloc
+  [
+   label=<
+   <table cellspacing="0" border="2" cellborder="1" cellpadding="6">
+    <tr><td bgcolor="black"><font color="white">Reloc</font></td></tr>
+    <tr><td align="left">Offset</td></tr>
+    <tr><td align="left">Addend</td></tr>
+    <tr><td align="left">Type</td></tr>
+    <tr><td align="left">Source type</td></tr>
+    <tr><td port="sym" align="left">Symbol import/def</td></tr>
+   </table>
+   >
+  ];
+
+
+
+  package:names -> name;
+  package:packages -> package_import;
+  package:imports -> sym_import;
+  package:defines -> sym_def;
+  package:segments -> code_seg [lhead=cluster_segs];
+
+  sym_import:package -> package_import;
+
+  sym_def:func_def -> func_def:sym_def;
+  sym_def:val_def -> val_def:sym_def;
+
+  reloc:sym -> sym_import;
+  reloc:sym -> sym_def;
+
+  code_seg:func_defs -> func_def;
+  code_seg:relocs -> reloc;
+
+  data_seg:val_defs -> val_def;
+  data_seg:relocs -> reloc;
+
+  bss_seg:val_defs -> val_def;
+}

@@ -1,0 +1,115 @@
+#pragma once
+// GENERATED HEADER
+
+#include <lisp/assembly/amd64/instruction.hpp>
+
+namespace j::lisp::assembly::amd64::inst {
+  constexpr inline instruction<12> test = {
+    .name      = "test",
+    .encodings = {
+      {
+        .mask = operand_mask(special_case_eax, operand_type_mask::imm32),
+        .operand_format = operand_format::implicit,
+        .opcode_format = opcode_format::plain_1,
+        .imm_format = imm_format::imm32,
+        .opcode = {0xA9U, 0x00U, 0x00U, 0x00U},
+        .name = "A9 id",
+      },
+      {
+        .mask = operand_mask(operand_type_mask::rm32, operand_type_mask::imm32),
+        .operand_format = operand_format::m,
+        .opcode_format = opcode_format::plain_1,
+        .modrm_forced_r = 0,
+        .imm_format = imm_format::imm32,
+        .opcode = {0xF7U, 0x00U, 0x00U, 0x00U},
+        .name = "F7 /0 id",
+      },
+      {
+        .mask = operand_mask(operand_type_mask::rm32, operand_type_mask::r32),
+        .operand_format = operand_format::mr,
+        .opcode_format = opcode_format::plain_1,
+        .opcode = {0x85U, 0x00U, 0x00U, 0x00U},
+        .name = "85 /r",
+      },
+      {
+        .mask = operand_mask(special_case_al, operand_type_mask::imm8),
+        .operand_format = operand_format::implicit,
+        .opcode_format = opcode_format::plain_1,
+        .imm_format = imm_format::imm8,
+        .opcode = {0xA8U, 0x00U, 0x00U, 0x00U},
+        .name = "A8 ib",
+      },
+      {
+        .mask = operand_mask(operand_type_mask::rm8, operand_type_mask::imm8),
+        .operand_format = operand_format::m,
+        .opcode_format = opcode_format::plain_1,
+        .modrm_forced_r = 0,
+        .imm_format = imm_format::imm8,
+        .opcode = {0xF6U, 0x00U, 0x00U, 0x00U},
+        .name = "F6 /0 ib",
+      },
+      {
+        .mask = operand_mask(operand_type_mask::rm8, operand_type_mask::r8),
+        .operand_format = operand_format::mr,
+        .opcode_format = opcode_format::plain_1,
+        .opcode = {0x84U, 0x00U, 0x00U, 0x00U},
+        .name = "84 /r",
+      },
+      {
+        .mask = operand_mask(special_case_rax, operand_type_mask::imm32),
+        .has_rex_w = true,
+        .operand_format = operand_format::implicit,
+        .opcode_format = opcode_format::plain_1,
+        .imm_format = imm_format::imm32,
+        .opcode = {0xA9U, 0x00U, 0x00U, 0x00U},
+        .name = "REX.W A9 id",
+      },
+      {
+        .mask = operand_mask(operand_type_mask::rm64, operand_type_mask::imm32),
+        .has_rex_w = true,
+        .operand_format = operand_format::m,
+        .opcode_format = opcode_format::plain_1,
+        .modrm_forced_r = 0,
+        .imm_format = imm_format::imm32,
+        .opcode = {0xF7U, 0x00U, 0x00U, 0x00U},
+        .name = "REX.W F7 /0 id",
+      },
+      {
+        .mask = operand_mask(operand_type_mask::rm64, operand_type_mask::r64),
+        .has_rex_w = true,
+        .operand_format = operand_format::mr,
+        .opcode_format = opcode_format::plain_1,
+        .opcode = {0x85U, 0x00U, 0x00U, 0x00U},
+        .name = "REX.W 85 /r",
+      },
+      {
+        .mask = operand_mask(special_case_ax, operand_type_mask::imm16),
+        .mandatory_prefix = mandatory_prefix::has_66,
+        .operand_format = operand_format::implicit,
+        .opcode_format = opcode_format::plain_1,
+        .imm_format = imm_format::imm16,
+        .opcode = {0xA9U, 0x00U, 0x00U, 0x00U},
+        .name = "66 A9 iw",
+      },
+      {
+        .mask = operand_mask(operand_type_mask::rm16, operand_type_mask::imm16),
+        .mandatory_prefix = mandatory_prefix::has_66,
+        .operand_format = operand_format::m,
+        .opcode_format = opcode_format::plain_1,
+        .modrm_forced_r = 0,
+        .imm_format = imm_format::imm16,
+        .opcode = {0xF7U, 0x00U, 0x00U, 0x00U},
+        .name = "66 F7 /0 iw",
+      },
+      {
+        .mask = operand_mask(operand_type_mask::rm16, operand_type_mask::r16),
+        .mandatory_prefix = mandatory_prefix::has_66,
+        .operand_format = operand_format::mr,
+        .opcode_format = opcode_format::plain_1,
+        .opcode = {0x85U, 0x00U, 0x00U, 0x00U},
+        .name = "66 85 /r",
+      },
+      instruction_encoding{},
+    },
+  };
+}

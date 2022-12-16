@@ -1,0 +1,16 @@
+Include "types.air"
+
+Term root(Ins forms);
+Term id();
+Term plus();
+Term one();
+
+
+NonTerminal IdPlusId() {
+  Match root(id, plus, id:$1)
+  Rewrite $1
+}
+NonTerminal IdPlusPlus() {
+  Match root(id, plus, plus:$1)
+  Rewrite $1
+}

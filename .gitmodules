@@ -1,0 +1,22 @@
+[submodule "ext/double-conversion"]
+	path = ext/double-conversion
+	url = https://github.com/google/double-conversion.git
+[submodule "subprojects/rapidyaml"]
+	path = subprojects/rapidyaml
+	url = https://github.com/biojppm/rapidyaml.git
+[submodule "ext/SPIRV-Headers"]
+	path = ext/SPIRV-Headers
+	url = https://github.com/KhronosGroup/SPIRV-Headers.git
+[submodule "tools/opcodes/ext/asmdb"]
+	path = tools/opcodes/ext/asmdb
+	url = https://github.com/asmjit/asmdb.git
+[submodule "subprojects/zydis"]
+	path = subprojects/zydis
+	url = https://github.com/zyantific/zydis.git
+	branch = master
+[submodule "ext/termpaint"]
+	path = ext/termpaint
+	url = https://github.com/termpaint/termpaint.git
+[submodule "ext/doctest"]
+	path = ext/doctest
+	url = https://github.com/onqtam/doctest.git

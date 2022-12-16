@@ -1,0 +1,85 @@
+Def StatementExprs  = Terms          - Terms(fn_body);
+Def ValueExprs      = StatementExprs - Terms(fn_sc_arg, act_rec_alloc, act_rec_parent);
+Def TaggableExprs   = ValueExprs     - Terms(untag, as_range);
+Def UntaggableExprs = ValueExprs     - Terms(tag);
+Def ActRecExprs     = Terms(act_rec_parent,lex_rd,lex_rd_bound,act_rec_rd,fn_sc_arg);
+
+Extend fn_body {
+  Op forms { Children StatementExprs; }
+}
+Extend progn {
+  Op forms { Children StatementExprs; }
+}
+Extend let {
+  Op forms { Children StatementExprs; }
+}
+Extend b_if {
+  Op cond { Children ValueExprs; }
+  Op then_branch { Children StatementExprs; }
+  Op else_branch { Children StatementExprs; }
+}
+Extend do_until {
+  Op branch { Children ValueExprs; }
+}
+Extend lex_wr {
+  Op value { Children StatementExprs; }
+}
+Extend lex_wr_bound {
+  Op value { Children StatementExprs; }
+}
+Extend sym_val_wr {
+  Op value { Children TaggableExprs; }
+}
+
+Extend call {
+  Op closure { Children TaggableExprs; }
+  Op args { Children TaggableExprs; }
+}
+Extend full_call {
+  Op args { Children TaggableExprs; }
+}
+
+Extend vec {
+  Op elems { Children TaggableExprs; }
+}
+Extend make_vec {
+  Op size { Children TaggableExprs; }
+}
+Extend vec_append {
+  Op vecs { Children ValueExprs; }
+}
+Extend vec_build {
+  Op elems { Children ValueExprs; }
+}
+
+Extend range_length {
+  Op range { Children ValueExprs; }
+}
+Extend range_get {
+  Op range { Children ValueExprs; }
+  Op index { Children ValueExprs; }
+}
+Extend range_set {
+  Op range { Children ValueExprs; }
+  Op index { Children ValueExprs; }
+  Op value { Children ValueExprs; }
+}
+Extend range_copy {
+  Op range { Children ValueExprs; }
+}
+
+Extend act_rec_alloc {
+  Op parent { Children ActRecExprs + Terms(nop); }
+}
+Extend act_rec_wr {
+  Op act_rec { Children ActRecExprs; }
+  Op value { Children TaggableExprs; }
+}
+Extend act_rec_rd {
+  Op act_rec { Children ActRecExprs; }
+}
+
+Extend closure {
+  Op act_rec { Children ActRecExprs + Terms(nop); }
+  Op body { Children fn_body; }
+}

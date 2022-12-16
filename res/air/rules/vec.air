@@ -1,0 +1,105 @@
+Rule vec|vec_build() -> EmptyVec();
+Rule EmptyVec($1 $2) -> If($2.Empty empty-vec $2).PreFx($1);
+
+Rule Vec($1 $2) -> ApplyFx($2 $1);
+Rule MkVec($1 $2 $3) -> ApplyFx(If($2.IsI64 mk-vec(MkConst($2 $3)) $3) $1);
+
+
+Rule mk-vec:$1(Const($3 $2)) -> [Pred $2 == 0] EmptyVec($3) -> MkVec($3 $2 $1);
+Rule mk-vec:$1 -> MkVec(_ Undef $1);
+Rule rng-copy(Append:$1) -> !Copy $1;
+Rule rng-copy(EmptyVec:$1) -> !Copy $1;
+Rule rng-copy(MkVec:$1) -> !Copy $1;
+Rule rng-copy(Vec:$1) -> !Copy $1;
+
+Rule vec:$1 -> Vec(_ $1);
+
+Rule rng-length(MkVec($1 $2 $3))
+-> [Pred $2.IsI64] Const($1 $2)
+-> ApplyFx($3.In(0) $1);
+Rule [Precedence 1] rng-length(^ rng-copy|as-vec|as-rng( $ $1)) -> $1;
+Rule rng-length(Vec($1 $2)) -> Const($1.AsPreFx() $2.NumInputs);
+Rule rng-length(EmptyVec($1 $2)) -> Const($1.AsPreFx() 0);
+
+Rule [Precedence 1] rng-copy(rng-copy|append|vec|vec-build|mk-vec|as-vec|as-rng:$1( $ _)) -> $1;
+Rule [Precedence 1] as-vec(as-vec|vec|mk-vec|vec-build|append|rng-copy:$1( $ _)) -> $1;
+
+NonTerminal AppendInner(~Fx ~Collect);
+# NonTerminal CollectVec(~Collect = AllocCollect());
+# Rule *CollectVec {
+#   $1 -> ! Collect += $1;
+# };
+NonTerminal MergeVecs(~Fx ~Collect);
+Rule *MergeVecs {
+  # vec(CollectVec($1)) -> ! Collect += $1;
+  $1 -> ! Collect += $1;
+};
+NonTerminal MergedVecs(~Fx ~Collect);
+Rule vec(MergeVecs:$1) -> MergedVecs:$1;
+Rule +MergedVecs {
+  vec(MergeVecs($1 $2)) -> { ! Collect += $2; ! Fx +=! $1; };
+};
+
+Rule *AppendInner {
+  MergedVecs($1 $2) -> { ! Collect += vec(Release($2)); ! Fx +=! $1; };
+  MkVec($1 $2 $3)
+    -> {
+        ! Collect += If($3.Empty mk-vec(const($2)) $3);
+        ! Fx +=! $1;
+      };
+  EmptyVec($1) -> ! Fx +=! $1;
+  Append($1 $2) -> {
+    ! Collect += $2;
+    ! Fx +=! $1;
+  };
+  $1 -> ! Collect += ApplyFxClear($1 Fx);
+};
+
+Rule append(AppendInner:$1($2 $3))
+  -> [Pred $3.Empty] EmptyVec($2.AsPreFx())
+  -> Append:$1;
+Rule Append($1 $2) -> ApplyFx(Many(append Release($2)) $1);
+
+TestSuite "Lisp - AIR - TRS - Vec" {
+  Alias app append;
+  Alias len rng-length;
+  Macro mk0 mk-vec(0);
+  Macro mk1 mk-vec(1);
+  Macro mk2 mk-vec(1);
+
+  Test "(vec)" vec() -> empty-vec;
+  Test "(mk-vec 0)" mk0 -> empty-vec;
+  Test "(append)" app() -> empty-vec;
+  Test "(sym-rd '%air:*empty-vec*)" sym-rd('%air:*empty-vec*) -> empty-vec;
+  Test "(rng-copy (vec))" rng-copy(vec()) -> empty-vec;
+  Test "(rng-copy (mk-vec 0))" rng-copy(mk0) -> empty-vec;
+  Test "(rng-copy (append))" rng-copy(app()) -> empty-vec;
+  Test "(rng-copy (sym-rd '%air:*empty-vec*))" rng-copy(sym-rd('%air:*empty-vec*)) -> empty-vec;
+
+  Test "(rng-length (vec))" len(vec()) -> 0;
+  Test "(rng-length (vec 1))" len(vec(1)) -> 1;
+  Test "(rng-length (vec 1 0))" len(vec(1 0)) -> 2;
+
+  Test "(rng-length (mk-vec 0))" len(mk0) -> 0;
+  Test "(rng-length (mk-vec 1))" len(mk1) -> 1;
+
+  Test "(rng-length (append))" len(app()) -> 0;
+  Test "(rng-length (sym-rd '%air:*empty-vec*))" len(sym-rd('%air:*empty-vec*)) -> 0;
+  Test "(rng-length (rng-copy (vec)))" len(rng-copy(vec())) -> 0;
+  Test "(rng-length (rng-copy (mk-vec 0)))" len(rng-copy(mk0)) -> 0;
+  Test "(rng-length (rng-copy (append)))" len(rng-copy(app())) -> 0;
+  Test "(rng-length (rng-copy (sym-rd '%air:*empty-vec*)))" len(rng-copy(sym-rd('%air:*empty-vec*))) -> 0;
+
+  Test "(append (append a b) c)" app(app(r1 r2) r3) -> app(r1 r2 r3);
+  Test "(append a (append b c))" app(r1 app(r2 r3)) -> app(r1 r2 r3);
+  Test "(append a (append b (append c d)))" app(r1 app(r2 app(r3 r4))) -> app(r1 r2 r3 r4);
+  Test "(append a (mk-vec 0) b)" app(r1 mk0 r2) -> app(r1 r2);
+  Test "(append (mk-vec 0) (mk-vec 0))" app(mk0 mk0) -> empty-vec;
+  Test "(append (mk-vec 0) (mk-vec 1))" app(mk0 mk1) -> mk1;
+  Test "(append (mk-vec 1) (mk-vec 0))" app(mk1 mk0) -> mk1;
+  Test "(append (mk-vec 1) (mk-vec 2))" app(mk1 mk2) -> app(mk1 mk2);
+  Test "(append (vec 1) (vec 2))" app(vec(1) vec(2)) -> vec(1 2);
+  Test "(append (vec) (vec 2))" app(vec() vec(2)) -> vec(2);
+  Test "(append (vec 1) (vec) (vec 2))" app(vec(1) vec() vec(2)) -> vec(1 2);
+  Test "(append (vec) (vec))" app(vec() vec()) -> empty-vec;
+}

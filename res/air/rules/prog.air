@@ -1,0 +1,39 @@
+NonTerminal Progx(~Fx);
+NonTerminal Prog(~Fx);
+NonTerminal Proge(~Fx);
+
+Rule Progx($1) -> ApplyProgx($1);
+Rule Progx:$1 -> Proge:$1;
+Rule $1 -> Proge(AllocFx($1).AsPreFx());
+
+Rule *Prog {
+  Const($1) -> ! Fx +=! $1;
+  SymValRd($1) -> ! Fx +=! $1;
+  $1            -> ! Fx +=  $1;
+  Progx($1)     -> ! Fx +=! $1;
+  EmptyVec($1)     -> ! Fx +=! $1;
+};
+
+Rule progn(Prog($1) Proge:$3($2)) -> { ! $2 +=! $1; !Copy $3; };
+Rule prog1(Proge:$3($2) Prog($1)) -> { ! $2 +=! $1; !Copy $3; };
+Rule [Precedence 1] progn(Prog($1) Vec|EmptyVec|MkVec|SymValRd|IAddConst|Const:$3($2)) -> { ! $2 +=! $1; !Copy $3; };
+Rule [Precedence 1] prog1(Vec|EmptyVec|MkVec|SymValRd|IAddConst|Const:$3($2) Prog($1)) -> { ! $2 +=$ $1; !Copy $3; };
+
+TestSuite "Lisp - AIR - TRS - Progn" {
+  Alias p progn;
+  Alias p1 prog1;
+  Alias c ld_const;
+  Alias w sym_val_wr;
+
+  Test "Empty progn" p() -> c(Nil);
+  Test "Single-valued progn" p(1) -> 1;
+  Test "(progn NOFX FX)" p(1 2) -> 2;
+  Test "(progn (progn FX FX) (progn FX FX))" p(p(w1 w2) p(w3 w4)) -> p(w1 w2 w3 w4);
+  Test "(progn (progn FX 1) (progn FX 2))" p(p(w1 2) p(w3 4)) -> p(w1 w3 4);
+  Test "(progn 1 (progn 2) 3) -> (progn 1 2 3)" p(w1 p(w2) w3) -> p(w1 w2 w3);
+  Test "(progn FX (progn FX NOFX))" p(w1 p(w2 3)) -> p(w1 w2 3);
+  Test "(progn FX a FX b)" p(1 w1 r1 w2 r2) -> p(w1 w2 r2);
+  Test "(prog1 r1 (progn FX NOFX))" p1(r1 p(w2 3)) -> p1(r1 w2);
+
+  Test "(prog1 false w1) -> (progn w1 false)" p1(False w1) -> p(w1 False);
+}

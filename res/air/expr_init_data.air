@@ -1,0 +1,30 @@
+File expr-init-data {
+  Path "lisp/air/exprs/expr_init_data_map.hpp"
+  [
+  | #pragma once
+  | // GENERATED HEADER - EDITS WILL BE LOST.
+  | #include "lisp/air/exprs/expr_info.hpp"
+  |
+  | namespace j::lisp::air::exprs {
+  |   J_A(ND) constexpr inline expr_init_data expr_init_data_v[num_expr_types_v]{
+  { Indent 4
+  { Let [Vs = [|{imm_type_mask(%(FormatHex(Spec.Second))), rep_spec(%(FormatHex(Spec.First)))}|]]
+  { ForEach [Expr = Terms]
+  | // %(Expr.Name)(%(Join(", ", Expr.Ctor.Map[It.Name])))
+  | [(u8_t)expr_type::%(Expr.Name)] = {{imm_type_mask(%(FormatHex(Expr.@Spec.Second))), rep_spec(%(FormatHex(Expr.@Spec.First)))}%(If(Expr.Inputs.Size, ",", "},"))
+  { If [Expr.Inputs.Size]
+  { Let [Spec = Expr.Inputs.First.@Spec]
+  |     {%(Vs)
+  -}
+  {- Let [Spec = Expr.Inputs.At(Min(Expr.Inputs.Size - 1, 1)).@Spec]
+  | , %(Vs)
+  -}
+  {- Let [Spec = Expr.Inputs.At(Min(Expr.Inputs.Size - 1, 2)).@Spec]
+  | , %(Vs)
+  -}
+  | }},
+  }}}}
+  |   };
+  | }
+  ]
+}

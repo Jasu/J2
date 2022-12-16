@@ -1,0 +1,257 @@
+Def TermsGrouped = Terms.GroupBy[It.Ctor.Map[It.Type]].SortBy[It.First];
+
+Fn TypeSpec(TypeSpec) = If(TypeSpec.IsEnum, "imm_type_mask{" + FormatHex(TypeSpec) + "}", TypeSpec);
+Fn RepSpec(RepSpec) = If(RepSpec.IsEnum, "rep_spec{" + FormatHex(RepSpec) + "}", RepSpec);
+Fn ValSpec2(Ts, Rs) = [| val_spec{%(TypeSpec(Ts)), %(RepSpec(Rs))} |].Expand();
+Fn ValSpec(Spec) = ValSpec2(Spec.Second, Spec.First);
+
+Def DynamicOffset = [-
+  { If [Op.DynamicOffsetMember]
+  { Let [Op = Op.DynamicOffsetMember]
+  { Let [Arg = Args.At(Op.CtorIndex).Second]
+  | %(Op.CtorSizeExpr)
+  }}}
+  -];
+
+Def ArgSpec = [-
+  { Let [ArgSpecs = G.Second.GroupBy[It.Ctor.At(Op.CtorIndex).@Spec].SortBy[It.Second.Size]]
+  { If [ArgSpecs.Size == 1]
+  | %(ValSpec(ArgSpecs.First.First))
+  } ElseIf [ArgSpecs.Size == 2 && ArgSpecs.First.Second.Size == 1] {
+  | (t == expr_type::%(ArgSpecs.First.Second.First.Name) ? %(ValSpec(ArgSpecs.First.First)) : %(ValSpec(ArgSpecs.Second.First)))
+  } Else {
+  | expr_init_data_v[(u8_t)t].args[%(Op.CtorIndex)]
+  }}
+  -];
+
+Def DynamicDataSize = [-
+  { If [DataSizes.Size != 1]
+  { If [DataSizes.Size == 2]
+  { If [DataSizes.First.Second.Size == 1]
+  | (t == expr_type::%(DataSizes.First.Second.First.Name) ? %(DataSizes.First.First) : %(DataSizes.Second.First))
+  } Else {
+  | %(Assert(False, "Todo"))
+  }
+  } Else {
+  | %(Assert(False, "Todo"))
+  }}
+  -];
+Def DynamicConstSize = [-
+  { If [PrototypeExpr.HasDynamicConst]
+  { Let [Arg = Args.At(PrototypeExpr.Consts.Last.CtorIndex).Second]
+  | %(PrototypeExpr.Consts.Last.Type.CtorSizeExpr)
+  }}
+  -];
+
+Def DynamicInputSize = [-
+  { If [PrototypeExpr.HasDynamicInput]
+  { Let [Arg = Args.At(PrototypeExpr.Inputs.Last.CtorIndex).Second]
+  | %(PrototypeExpr.Inputs.Last.Type.CtorSizeExpr)
+  }}
+  -];
+
+Def DynamicNumInputs = [-
+  { If [PrototypeExpr.HasDynamicInput]
+  { Let [Arg = Args.At(PrototypeExpr.Inputs.Last.CtorIndex).Second]
+  | %(PrototypeExpr.Inputs.Last.Type.@CtorNumInputsExpr)
+  }}
+  -];
+
+Def DynamicMaxInputs = [-
+  { If [PrototypeExpr.HasDynamicInput]
+  { Let [Arg = Args.At(PrototypeExpr.Inputs.Last.CtorIndex).Second]
+  | %(PrototypeExpr.Inputs.Last.Type.@CtorMaxInputsExpr)
+  }}
+  -];
+
+File write-expr {
+  Def RawExprPtr = "result";
+  Def RawExprAccess = "result->";
+  Def BaseExprPtr = "result";
+  Def BaseExprAccess = "result->";
+  Fn WithDynamicDataSize(X) = If(DataSizes.Size == 2, "(t == expr_type::" + DataSizes.First.Second.First.Name + " ? " + (DataSizes.First.First + X) + "U : " + (DataSizes.Second.First + X) + "U)", If(Assert(DataSizes.Size == 1, "Unsupported data size count"), X + "U", ""));
+
+  Def ResultSpec = [-
+    { If [ResultSpecs.Size == 1]
+    | %(ValSpec2(ResultSpecs.First.First.Second, ResultSpecs.First.First.First))
+    } ElseIf [ResultSpecs.Size == 2 && ResultSpecs.First.Second.Size == 1] {
+    | (t == expr_type::%(ResultSpecs.First.Second.First.Name) ? %(ValSpec2(ResultSpecs.First.First.Second, ResultSpecs.First.First.First)) : %(ValSpec2(ResultSpecs.Second.First.Second, ResultSpecs.Second.First.First)))
+    } Else {
+    | expr_init_data_v[(u8_t)t].result
+    }
+    -];
+
+  Path "lisp/air/exprs/write_expr.hpp"
+  [
+  | #pragma once
+  | // GENERATED HEADER - EDITS WILL BE LOST.
+  | #include "lisp/air/exprs/write_utils.hpp"
+  | #include "lisp/air/air_var.hpp"
+  | #include "lisp/air/exprs/quasiquote.hpp"
+  | #include "lisp/values/lisp_imm.hpp"
+  |
+  | namespace j::lisp::air::inline functions { struct air_closure; }
+  | namespace j::mem { class bump_pool; }
+  |
+  | namespace j::lisp::air::exprs {
+  { Indent
+  { ForEach [G = TermsGrouped]
+  { Let [Args = G.First.Map[CtorType,ArgIndex: G.Second.GroupBy[It.Ctor.At(ArgIndex).Name]].Map[Tuple(ItIndex, If(It.Size == 1, It.First.First, "arg" + ItIndex), G.First.At(ItIndex), It)]]
+  { DocComment
+  | Writes exprs constructible as (%(Join(", ", Args.Map[It.Third.Name]))).
+  |
+  | Expressions:
+  { ForEach [Expr = G.Second]
+  | %(ExprDocCommentListItem)
+  }
+  |
+  | %(DoxyParams(Args.Map[Tuple(It.Second, Tuple(It.Third.Name + " #" + It.First + If(It.Fourth.Size == 1, "", " renamed from:")).Append(
+  If(It.Fourth.Size == 1,
+  Tuple(),
+  It.Fourth.Map[It.First + " in " + OxfordAnd(It.Second.Map[It.Name])]
+  )))]))
+  }
+  | J_A(RNN,NODISC) expr * write_expr(expr_type t, j::mem::bump_pool & pool, u32_t pad%(If(Args.Size, ",", ");"))
+  { If [Args]
+  |                                   %(Join(", ", Args.Map[It.Third.CtorType + " " + It.Second])));
+  }
+  |
+  }}}
+  | }
+  ]
+
+  Path "lisp/air/exprs/write_expr.cpp"
+  [
+  | // GENERATED FILE - EDITS WILL BE LOST.
+  | #include "lisp/air/exprs/write_expr_impl.hpp"
+  | #include "lisp/air/exprs/write_expr.hpp"
+  | #include "lisp/air/exprs/exprs.hpp"
+  | #include "mem/bump_pool.hpp"
+  | #include "lisp/air/exprs/expr_init_data_map.hpp"
+  |
+  | namespace j::lisp::air::exprs {
+  { Indent
+  { ForEach [G = TermsGrouped]
+  { Let [PrototypeExpr = G.Second.Map[It].First]
+  { Let [DataSizes = G.Second.GroupBy[It.StaticDataSize].SortBy[It.Second.Size]]
+  { Let [Args = G.First.Map[CtorType,ArgIndex: G.Second.GroupBy[It.Ctor.At(ArgIndex).Name]].Map[Tuple(ItIndex, If(It.Size == 1, It.First.First, "arg" + ItIndex), G.First.At(ItIndex), It)]]
+  { Let [ResultSpecs = G.Second.GroupBy[Tuple(
+    It.?@ResultRepSpecExpr || It.@Spec.First,
+    It.?@ResultTypeSpecExpr || It.@Spec.Second)].SortBy[It.Second.Size]]
+
+
+  { Comment
+  | Ctor: (%(Join(", ", Args.Map[It.Third.Name]))).
+  | Exprs: %(OxfordAnd(G.Second.Map[It.Name]))
+  { ForEach [Ap = Args]
+  | Arg #%(Ap.First): %(Ap.Third.Name) %(Ap.Second)
+  { ForEach [Expr = G.Second]
+  { Let [Old = Expr.Ctor.At(Ap.First)]
+  { If [Old.IsInput]
+  |         %(Expr.Name): %(Old.Name): %(Old.@Spec.First.Name) %(Old.@Spec.Second.Name)
+  } Else {
+  |         %(Expr.Name): %(Old.Name)
+  }}}}
+
+  # If the expression has data, write a comment.
+  { If [DataSizes.Size != 1 || DataSizes.First.First != 0]
+  |
+  | Has Data
+  | ========
+  { ForEach [Ds = DataSizes]
+  | Data: %(Ds.First) bytes in %(Join(", ", Ds.Second.Map[It.Name]))
+  }}
+
+
+  # If the code must select result spec based on type, write a comment.
+  { If [ResultSpecs.Size != 1]
+  |
+  | Multiple result specs
+  | =====================
+  | %(FormatTable(ResultSpecs.Map[Tuple(If(It.First.First.IsEnum, It.First.First.Name, It.First.First), It.First.Second.Name, " - " + OxfordAnd(It.Second.Map[It.Name]))].SortBy[It.First]))
+  }
+  } # End Comment
+
+
+  | J_A(RNN,NODISC) expr * write_expr(expr_type%(If(G.Second.Size == 1, "", " t")), j::mem::bump_pool & pool, u32_t pad%(If(Args.Size, ",", ") {"))
+  { If [Args]
+  |                                   %(Join(", ", Args.Map[It.Third.CtorType + " " + It.Second])))
+  | {
+  }
+  { Let [DynInputsBegin = [| %(If(PrototypeExpr.NumStaticInputs, "(", ""))reinterpret_cast<exprs::input*>(result + 1)%(If(PrototypeExpr.NumStaticInputs, " + " + PrototypeExpr.NumStaticInputs + ")", "")) |]]
+  { Let [HasPostInit = PrototypeExpr.NumStaticInputs || G.Second.Some[It.Has(@AfterConstruct)] || PrototypeExpr.Members.Some[!It.IsData && (It.HasDynamicSize || It.HasDynamicOffset)]]
+  { Let [StaticSize = ExprSize + PrototypeExpr.StaticInputSize + PrototypeExpr.StaticConstSize + If(DataSizes.Size == 1, DataSizes.First.First, 0)]
+  { Let [SizeComponents = Tuple("pad", WithDynamicDataSize(StaticSize), DynamicInputSize.Expand(), DynamicConstSize.Expand()).Filter[It]]
+  |   %(If(HasPostInit, "exprs::expr *result =", "return")) ::new (pool.allocate_aligned_zero(%(Join(" + ", SizeComponents)), 8U)) exprs::%(PrototypeExpr.Name){
+  }}
+  |     {
+  |       .type = %(If(G.Second.Size == 1, "expr_type::" + PrototypeExpr.Name, "t")),
+  { Let [NumInputsComponents = Tuple(PrototypeExpr.NumStaticInputs, DynamicNumInputs.Expand()).Filter[It]]
+  { If [NumInputsComponents]
+  { Let [MaxInputsComponents = Tuple(PrototypeExpr.NumStaticInputs, DynamicMaxInputs.Expand()).Filter[It]]
+  { If [NumInputsComponents.Size == 2]
+  |       .num_inputs = (u8_t)(%(Join(" + ", NumInputsComponents))), .max_inputs = (u8_t)(%(Join(" + ", MaxInputsComponents))),
+  } Else {
+  |       .num_inputs = %(Join(" + ", NumInputsComponents)), .max_inputs = %(Join(" + ", MaxInputsComponents)),
+  }}}}
+  |       .result = %(ResultSpec),
+  |     },
+
+  # Initialize static inputs and consts
+  { ForEach [Op = PrototypeExpr.Members.Filter[!It.IsData && !It.HasDynamicSize && !It.HasDynamicOffset]]
+  { Let [Arg = Args.At(Op.CtorIndex).Second]
+  |     // %(If(Op.IsInput, Op.Type.Name, "Const")) #%(Op.RegionIndex) (Arg #%(Op.CtorIndex))%(If(Op.IsInput, "", " " + Op.Type.Name))
+  { If [Op.IsScalar]
+  |     .%(Op.Name) = %(Arg),
+  } Else {
+  |     .%(Op.Name){%(Arg)%(If(Op.IsInput,", " + ArgSpec.Expand(),""))},
+  }}}
+  |   };
+  # Attach static inputs.
+  { ForEach [Op = PrototypeExpr.Inputs.Slice(0, PrototypeExpr.NumStaticInputs)]
+  |   %(Args.At(Op.CtorIndex).Second)->parent = result;
+  |   %(Args.At(Op.CtorIndex).Second)->parent_pos = %(Op.RegionIndex);
+  }
+
+  # Initialize inputs with dynamic offet or size
+  { ForEach [Op = PrototypeExpr.Members.Filter[!It.IsData && (It.HasDynamicSize || It.HasDynamicOffset)]]
+  |
+  { Let [OpTarget = [|j::add_bytes<%(Op.TypeName)*>(result + 1, %(Join(" + ", Tuple(Op.StaticOffset, DynamicOffset.Expand()).Filter[It])))|]]
+  { Let [Arg = Args.At(Op.CtorIndex).Second]
+  |   // %(If(Op.IsInput, Op.Type.Name, "Const")) #%(Op.RegionIndex) (Arg #%(Op.CtorIndex))%(If(Op.IsInput, "", " " + Op.Type.Name))
+  { If [Op.CtorStmt]
+  |   %(Op.CtorStmt)
+  } ElseIf [Op.Type.@Trivial] {
+  |   *%(OpTarget) = %(Arg);
+  } Else {
+  |   ::new (%(OpTarget)) %(Op.TypeName){%(Arg)};
+  }}}}
+
+  # Eval custom @AfterConstruct code
+  { Let [ExprAccess = [|reinterpret_cast<%(Term.Name)*>(result)->|]]
+  { Let [Args = Args.Map[It.Second]]
+  { Indent
+  { Let [AfterConstructs = G.Second.Filter[It.Has(@AfterConstruct)].GroupBy[Term: Term.@AfterConstruct.Expand()].SortBy[It.Second.Size]]
+  {- ForEach [Ac = AfterConstructs]
+  |
+  | // @AfterConstruct for %(Join(", ", Ac.Second.Map[It.Name]))
+  { If [Ac.Second.Size != G.Second.Size]
+  | if (%(Join(" || ", Ac.Second.Map["t == expr_type::" + It.Name]))) {
+  { Indent
+  | %(Ac.First)
+  }
+  | }
+  } Else {
+  | %(Ac.First)
+  }
+  }}}}}
+  { If [HasPostInit]
+
+  |   return result;
+  }
+  | }
+  |
+  }}}}}}}}
+  | }
+  ]
+}

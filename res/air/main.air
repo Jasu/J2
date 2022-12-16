@@ -1,0 +1,632 @@
+Include "types.air"
+Include "templates.air"
+Def ExprSize = 24;
+Attr ResultTypeSpecExpr;
+Attr ResultRepSpecExpr;
+
+Flags Rep {
+  Tagged    0b001
+  Untagged  0b010
+  Range     0b100
+
+  NotRange  0b011
+  Any       0b111
+}
+
+Attr Spec {
+  Type (Rep ImmType)
+}
+
+###############################################################################
+# Constants
+###############################################################################
+
+## Nop
+#
+# Does nothing, evaluating to `nil`.
+#
+# `nop`s are not moved or optimized away, as they are usually used for placeholders for transformations.
+Term nop            () @Spec(Tagged Nil);
+
+## Load constant
+#
+# Evaluates to a constant value.
+Term ld_const       (## Constant
+                     Imm const_val) @Spec(Any Imm) {
+  IsConst;
+  @ResultTypeSpecExpr "const_val.type()"
+  @ResultRepSpecExpr "possible_reps[const_val.type()]"
+}
+Alias const ld_const;
+
+
+
+###############################################################################
+# Function arguments
+###############################################################################
+
+## Argument
+#
+# Evaluates to the argument specified by `index`.
+Term fn_arg(## Arg Idx
+            # Zero-based index to required positional arguments.
+            U32 index) @Spec(Tagged Imm);
+
+## Rest argument
+#
+# Evaluates to the range of rest arguments.
+#
+# For the `full_call` calling convention, all arguments are passed in `fn_rest_arg`.
+Term fn_rest_arg() @Spec(Range Range);
+
+## Static chain arg
+# Evaluates to the topmost activation record of the closure.
+Term fn_sc_arg() @Spec(Untagged ActRec);
+
+
+
+###############################################################################
+# Progn-likes
+###############################################################################
+
+## Fn body
+#
+# Let-like structure binding function arguments.
+#
+# Formally evaluates to the last form. This is to simplify the deduction of
+# function result types. Valid in top-level and in `closure`.
+Term fn_body        (Ins forms @Spec(Any Any),
+                    # Args
+                    VarDefs vars) @Spec(Tagged Imm);
+
+## Progn
+#
+# Evaluate `forms` in sequence, evaluating to the lresult of the last form.
+# An empty `progn` evaluates to `nil`.
+Term progn          (# Forms
+                    Ins forms @Spec(Any Any)) @Spec(Any Any);
+
+## Prog1
+#
+# Evaluate `forms` in sequence, evaluating to the result of the first form.
+# An empty `prog1` evaluates to `nil`.
+Term prog1          (# Forms
+                    Ins forms @Spec(Any Any)) @Spec(Any Any);
+
+## Let
+#
+# Evaluate `forms` with `vars` in lexical environment.
+Term let            (# Forms
+                    Ins forms @Spec(Any Any),
+                    # Lexvars
+                    VarDefs vars) @Spec(Any Any);
+
+
+
+###############################################################################
+# Local control flow (excluding short-circuit)
+###############################################################################
+
+## If
+#
+# Evaluate `then_branch` if `cond` is truthy, otherwise evaluate `false_branch`.
+Term b_if           (# Predicate
+                    In cond @Spec(Any Any),
+                    # Then
+                    In then_branch @Spec(Any Any),
+                    # Else
+                    In else_branch @Spec(Any Any)) @Spec(Any Any);
+Alias if b_if;
+
+## Do Until
+#
+# Evaluate `branch` until it evaluates to a truthy value.
+#
+# Evaluates to the final result of `branch`.
+Term do_until       (# Loop Body
+                    In branch @Spec(Any Any)) @Spec(Any Any);
+Alias until do_until;
+
+
+
+###############################################################################
+# Variable access (lex and mem)
+###############################################################################
+
+## Read Var.
+# Evaluates to the value of the lexical variable.
+Term lex_rd         (# Src Var
+                    Var var) @Spec(Any Any) {
+Data UseDefs defs;
+}
+Alias rd lex_rd;
+
+## Read Bound Var
+Term lex_rd_bound = lex_rd;
+Alias rd-bound lex_rd_bound;
+
+## Write Var
+# Evaluates to `value`.
+Term lex_wr         (# Dst Var
+                    # Pointer to the target `air_var`.)
+                    Var var,
+                    # Src
+                    In value @Spec(Any Any)) @Spec(Any Any) {
+Data UseDefs uses;
+}
+Alias wr lex_wr;
+
+## Write Bound Var
+Term lex_wr_bound = lex_wr;
+Alias wr-bound lex_wr_bound;
+
+
+## Read Global
+#
+# Read a symbol value (global).
+Term sym_val_rd     (# Src Var
+                    Id var) @Spec(Tagged Imm);
+Alias sym-rd sym_val_rd;
+
+## Write Global
+#
+# Write a symbol value (global).
+Term sym_val_wr     (# Dst Var
+                    Id var,
+                    # Src
+                    In value @Spec(Tagged Imm)) @Spec(Tagged Imm);
+Alias sym-wr sym_val_wr;
+
+
+
+###############################################################################
+# Assertions
+###############################################################################
+
+## Type assert
+#
+# Throws if `value` is not in `types`.
+Term type_assert    (In value @Spec(Tagged Imm),
+                    # AllowList
+                    ImmMask types) @Spec(Tagged Imm) {
+@ResultTypeSpecExpr [| %(Args.Second.Second) |]
+}
+
+## Dyn Type assert
+#
+# Throws if `value` is not in `types`.
+#
+# Compiler-generated `type_assert`, that may be moved more freely than user-inserted asserts.
+Term dyn_type_assert = type_assert;
+
+
+
+###############################################################################
+# Integer arithmetic
+###############################################################################
+
+## Integer Negate
+#
+# Negate an integer.
+Term ineg           (# Integer
+                    In value @Spec(Tagged|Untagged I64)) @Spec(Tagged|Untagged I64);
+
+## Integer Add
+#
+# Add integers given as `values`.
+Term iadd           (# Integers
+                     In lhs @Spec(Tagged|Untagged I64),
+                     In rhs @Spec(Tagged|Untagged I64)) @Spec(Tagged|Untagged I64);
+
+## Integer Subtract
+#
+# Subtract integers given as `values`.
+Term isub = iadd;
+
+## Integer Multiply
+#
+# Multiply integers given as `values`.
+Term imul           (# Integers
+                     In lhs @Spec(Untagged I64),
+                     In rhs @Spec(Untagged I64)) @Spec(Untagged I64);
+
+## Integer Divide
+#
+# Divide the first value by the rest of the values.)
+Term idiv = imul;
+
+
+###############################################################################
+# Boolean operators (incl. short-circuiting control flow)
+###############################################################################
+
+## Logical Or
+#
+# Short-circuiting OR for `values`.
+# Evaluates to the value of the first truthy expression, or to `false`.
+Term lor            (# Forms
+                    Ins values @Spec(Any Any)) @Spec(Any Any);
+
+## Logical And
+# Short-circuiting AND for `values`.
+# Evaluates to the value of the first falsy expression, or to the final expression.
+Term land = lor;
+
+## Logical Not
+#
+# Evaluates to `false` if `value` is truthy, `true` otherwise.
+Term lnot           (# Input
+                    In value @Spec(Any Any)) @Spec(Tagged Bool);
+
+## Cast to Bool
+# Evaluates to `true` if `value` is truthy, `false` otherwise.
+Term to_bool = lnot;
+Alias to-bool to_bool;
+
+
+###############################################################################
+# Comparison operators
+###############################################################################
+
+## Eq
+# Identity equality.
+# Note that strings are not `eq`-equal.
+Term eq             (## Lhs
+                    In lhs @Spec(Any Any),
+                    ## Rhs
+                    In rhs @Spec(Any Any)) @Spec(Tagged Bool);
+
+## Not Eq
+# Identity inequality.
+# Note that strings are not `eq`-equal.
+Term neq = eq;
+
+
+
+###############################################################################
+# Representation handling
+###############################################################################
+
+## Tag
+# Tags `untagged`.
+# Note that boolean, nil, and symbol values are always tagged.
+Term tag            (## Untagged
+                    In untagged @Spec(Untagged Imm)) @Spec(Tagged Imm);
+
+## Untag
+# Untags `tagged`.
+# Note that boolean, nil, and symbol values are always tagged.
+Term untag          (## Tagged
+                    In tagged @Spec(Tagged Imm)) @Spec(Untagged Imm);
+
+## Cast to Range
+# Casts `vec` to range (i.e. a pair with `begin` pointer and size.
+# The result type is still Vec, but its representation will be a range.
+Term as_range       (## Vec
+                    In vec @Spec(Tagged|Untagged Vec)) @Spec(Range Vec);
+Alias as-rng as_range;
+
+## Cast to Vec
+# Casts `range` to vec.
+# Allocates a new vec for pure ranges (e.g. rest arguments).
+Term as_vec         (## Range
+                    In range @Spec(Range Range)) @Spec(Tagged|Untagged Vec);
+
+Alias as-vec as_vec;
+
+
+###############################################################################
+# Function calls
+###############################################################################
+
+## Call Closure
+# Calls `closure` with `args`.
+Term call           (## Fn
+                     In closure @Spec(Untagged Closure),
+                     ## Args
+                     Ins args @Spec(Tagged Imm)) @Spec(Tagged Imm);
+
+## Full Call
+# Calls a free function `fn` with `args`.
+Term full_call      (## Fn Args
+                     Ins args @Spec(Tagged Imm),
+                     ## Fn Name
+                     Id fn) @Spec(Tagged Imm);
+
+
+
+###############################################################################
+# Vector operations
+###############################################################################
+
+## Vec
+# Initialize a vec with `elems` as values.
+Term vec            (## Elements
+                     Ins elems @Spec(Tagged Imm)) @Spec(Untagged Vec);
+
+## Make Vec
+#
+# Allocate a vec with `size` elements.
+#
+# The elements are initialized to `nil`.
+Term make_vec       (## Size
+                     #
+                     # Size in elements.
+                     In size @Spec(Tagged|Untagged I64)) @Spec(Untagged|Range Vec);
+Alias mk-vec make_vec;
+
+## Vec Append
+#
+# Append `vecs...` into a single vec.
+Term vec_append     (## Vecs
+                     Ins vecs @Spec(Untagged Vec)) @Spec(Untagged Vec);
+Alias append vec_append;
+
+
+## Quasi
+#
+# Build a vec with `elems` as values, possibly splatted.)
+Term vec_build      (# Elements
+                     Ins elems @Spec(Any Any),
+                     Quasis quasi_info) @Spec(Untagged Vec){
+  @AfterConstruct [
+  | auto in_ptr = %(RawExprAccess)inputs_begin();
+  | for (u32_t i = 0, max = %(RawExprAccess)num_inputs; i < max; ++i) {
+  |  in_ptr[i].type = %(ExprAccess)quasi_info()[i].type == push ? val_imm_tag : val_vec_or_range;
+  | }
+  ]
+}
+
+Alias vec-build vec_build;
+
+
+
+###############################################################################
+# Range operations
+###############################################################################
+
+## Range Length
+#
+# Evaluates to the number of elements in a range or a vec.
+Term range_length   (# Range
+                     In range @Spec(Any Vec|Range)) @Spec(Untagged I64);
+Alias rng-length range_length;
+
+## Range Get
+#
+# Evaluates to the `index`:th element in a range or vec.
+Term range_get      (# Source Range
+                     In range @Spec(Any Vec|Range),
+                     # Index
+                     In index @Spec(Tagged|Untagged I64)) @Spec(Tagged Imm);
+Alias rng-get range_get;
+
+## Range Set
+#
+# Writes `value` to a range or a vec, evaluating to `value`.
+Term range_set      (# Target Range
+                     In range @Spec(Any Vec|Range),
+                     # Index
+                     In index @Spec(Tagged|Untagged I64),
+                     # Value
+                     In value @Spec(Tagged Imm)) @Spec(Tagged Imm);
+Alias rng-set range_set;
+
+## Copy Range
+#
+# Copy `range` as a vec.
+Term range_copy     (# Source Range
+                     In range @Spec(Untagged|Range Vec|Range)) @Spec(Any Vec);
+
+Alias rng-copy range_copy;
+
+
+###############################################################################
+# Closure handling
+###############################################################################
+
+## Make Activation Record
+#
+# Allocate an activation record.
+Term act_rec_alloc  (# ActRec Index
+                     U32 index,
+                     # Parent Scope
+                     In parent @Spec(Tagged|Untagged ActRec|Nil)) @Spec(Untagged ActRec);
+
+## Write Activation Record
+#
+# Write a variable in an activation record.
+Term act_rec_wr     (# Bound Lexvar
+                     Var var,
+                     # Activation Rec
+                     In act_rec @Spec(Untagged ActRec),
+                     # Value
+                     In value @Spec(Tagged Imm)) @Spec(Tagged Imm);
+
+## Read Activation Record
+#
+# Read a variable from an activation record.
+Term act_rec_rd     (# Bound Lexvar
+                     Var var,
+                     # Activation Rec
+                     In act_rec @Spec(Untagged ActRec)) @Spec(Tagged Imm);
+
+## Activation Record Parent
+#
+# Evaluates to the parent of `act_rec`.
+Term act_rec_parent (# Activation Rec
+                     In act_rec @Spec(Untagged ActRec)) @Spec(Untagged ActRec);
+
+## Construct Closure
+#
+# Evaluates to `closure` bound with `act_rec`.
+#
+# Note that `body` is only used during transformation passes. When compiling,
+# the function is read from `closure`.
+Term closure(# Activation Rec
+             In act_rec @Spec(Tagged|Untagged ActRec|Nil),
+             # Closure Body
+             In body @Spec(Tagged Imm),
+             # Closure Info
+             Closure closure) @Spec(Tagged|Untagged Closure);
+
+Include "children.air"
+Include "expr_structs.air"
+Include "debug_attrs.air"
+Include "graphviz_format.air"
+Include "expr_debug_format.air"
+Include "layout_debug.air"
+Include "expr_init_data.air"
+Include "write_expr.air"
+Include "expr_size_data.air"
+Include "visit.air"
+
+Fn ConstArgTypes(Term) = If(Term.IsString, "", Join(", ", Term.Consts.Map[It.CtorTypeName]));
+Fn WrapExprType(Term) = If(Term.IsString, Term, "et::" + Term.Name);
+Fn ArgLength(Args) = Args.Reduce[Acc + It.Size + 2; 0];
+Fn WrapConstArg(Arg) = If(Arg.Source == TeDataSource.ConvertedConst && Arg.Type == Id,
+                          Arg.Original.Raw,
+                          Arg.Value);
+Fn GetWrPrefix(Term, RawConstArgs, InArgs, Comma) =
+  If(Term == progn,
+     "w.progn(",
+     If(Term == sym_val_wr,
+        "w.sym_wr(" + WrapConstArg(RawConstArgs.First) + If(InArgs.Size, Comma, ""),
+        "w.wr<" + ConstArgTypes(Term) + ">(" + WrapExprType(Term) + Join("", RawConstArgs.Map[", " + WrapConstArg(It)]) + If(InArgs.Size, Comma, "")));
+
+TRS {
+  GetStackTerm [| s.stack%(If(StackOffset, "[" + (-StackOffset) + "].e", "->e")) |]
+  GetInputTerm [| s.iter.e->in_expr(s.iter.index%(If(InputOffset != -1, " + " + (-1 - InputOffset), ""))) |]
+  GetStackNonTerminal [| s.nt<%(NtType.Name)>(%(StackOffset)) |]
+  GetStackNonTerminalField [| s.field<%(ValType.Type)>(%(StackOffset), %(FieldOffset)) |]
+  ConstructTerm [
+    { If [Term == ld_const]
+    { If [RawConstArgs.First.Source == TeDataSource.ConvertedConst && RawConstArgs.First.Original.IsInt]
+    | w.i64(%(RawConstArgs.First.Original))
+    } ElseIf [RawConstArgs.First.Source == TeDataSource.ConvertedConst && RawConstArgs.First.Original.IsId] {
+    | w.id(%(RawConstArgs.First.Original.Raw))
+    } Else {
+    | w.wrc(%(ConstArgs.First))
+    }
+    } ElseIf [Gte(ArgLength(InArgs), 74)]  {
+    | %(GetWrPrefix(Term, RawConstArgs, InArgs, ","))
+    { Indent
+    { ForEach [Arg,ArgIdx = InArgs]
+    | %(Arg)%(If(ArgIdx == InArgs.Size - 1, "", ","))
+    }
+    }
+    | )
+    } Else {
+    | %(GetWrPrefix(Term, RawConstArgs, InArgs, ", "))%(Join(", ", InArgs)))
+    }
+    ]
+
+  Fn Allocate(Stack:Str): TermStack [Acquire] = [| allocate(%(Stack)) |];
+  Fn AllocCollect(E:Expr): TermStack [Acquire] = [| allocate(s.collect_stack, %(E)) |];
+  Fn AllocateSplit(Stack:Str): SplitTermStack [Acquire] = [| allocate_split(%(Stack)) |];
+  Fn AllocateSplit(Stack:Str E:Expr): SplitTermStack [Acquire] = [| allocate_split(%(Stack), %(E)) |];
+  Fn AllocateSplit(Stack:Str E:TermSpan): SplitTermStack [Acquire] = [| allocate_split(%(Stack), %(E)) |];
+  Fn AllocFx(E:Expr): SplitTermStack [Acquire] = [| allocate_split(s.side_fx_stack, %(E)) |];
+  Fn AllocFx(E:TermSpan): SplitTermStack [Acquire] = [| allocate_split(s.side_fx_stack, %(E)) |];
+
+  Fn Release(Values:TermStack[Consume]):TermSpan = [| %(Values).release() |];
+  Fn Release(Values:SplitTermStack[Consume]):SplitSpan = [| %(Values).release() |];
+  Fn Many(Type:ExprType Values):Expr = [| s.wrap_many(%(Type), %(Values)) |];
+
+  Fn PostFxClear(Term:Expr Fx[Write]):Expr = [| s.wrap_post_fx_no_rel(%(Term), (%(Fx)).clear()) |];
+  Fn PreFxClear(Term:Expr Fx[Write]):Expr = [| s.wrap_pre_fx_no_rel(%(Term), (%(Fx)).clear()) |];
+  Fn Clear(Fx[Use]) = [| (%(Fx)).clear() |];
+
+
+
+  Fn MaybeINeg(Sign:I8 Term:Expr):Expr = [| s.maybe_ineg(%(Sign), %(Term)) |];
+
+  Fn MidPreFx(Term:Expr Fxa:SplitTermStack[Write] Fxb:SplitTermStack[Write]):Expr = [| s.apply_mid_pre_fx(%(Term), %(Fxa), %(Fxb)) |];
+
+  Fn ApplyPreFx(Term:Expr Fx:SplitTermStack[Write]):Expr = [| s.apply_pre_fx(%(Term), %(Fx)) |];
+  Fn ApplyPostFx(Term:Expr Fx:SplitTermStack[Write]):Expr = [| s.apply_post_fx(%(Term), %(Fx)) |];
+  Fn ApplyPreFxAsPostFx(Term:Expr Fx:SplitTermStack[Write]):Expr = [| s.apply_pre_fx_as_post_fx(%(Term), %(Fx)) |];
+  Fn ApplyPostFxAsPreFx(Term:Expr Fx:SplitTermStack[Write]):Expr = [| s.apply_post_fx_as_pre_fx(%(Term), %(Fx)) |];
+
+  Fn ApplyFx(Term:Expr Fx:SplitTermStack[Consume]):Expr = [| s.wrap_fx(%(Term), %(Fx)) |];
+  Fn ApplyFx(Term:Expr Fxa:SplitTermStack[Consume] Fxb:SplitTermStack[Consume]):Expr = [| s.wrap_fx(%(Term), %(Fxa), %(Fxb)) |];
+
+  Fn Merge(Lhs:TermStack[Write] Rhs:TermStack[Consume] Pre:SplitTermStack[Write Return] Post:SplitTermStack[Consume]):SplitTermStack = [| s.merge(%(Lhs), %(Rhs), %(Pre), %(Post)) |];
+  Fn MergeFull(Lhs:TermStack[Write] Rhs:TermStack[Consume] Pre:SplitTermStack[Write Return] Post:SplitTermStack[Consume]):SplitTermStack = [| s.merge_full(%(Lhs), %(Rhs), %(Pre), %(Post)) |];
+  Fn ApplyProgx(Fx[Consume]):Expr = [| s.wrap_progx(%(Fx)) |];
+  Fn ApplyFxClear(Term:Expr Fx:SplitTermStack[Write]):Expr = [| s.wrap_fx_clear(%(Term), %(Fx)) |];
+  Fn MkConst(Val:Imm):Expr = [| s.mk_const(%(Val)) |];
+  Fn MkConst(Val:Imm Old:Expr):Expr = [| s.mk_const(%(Val), %(Old)) |];
+  Fn MkConst(Val:Imm Old:Expr Fx:SplitTermStack[Consume]):Expr = [| s.wrap_pre_fx(s.mk_const(%(Val), %(Old)), %(Fx)) |];
+  Fn Fold(Type:ExprType Val:Imm):Imm = [| s.fold_table.fold(%(Type), %(Val)) |];
+  Fn Fold(Type:ExprType Lhs:Imm Rhs:Imm):Imm = [| s.fold_table.fold(%(Type), %(Lhs), %(Rhs)) |];
+  Fn FoldTail(Type:ExprType Lhs:Imm Rhs:Imm):Imm = [| s.fold_table.fold_tail(%(Type), %(Lhs), %(Rhs)) |];
+  Fn ManyMove(T:ExprType To:TermStack[Write] Src:TermStack[Consume]): Expr = [| s.wrap_many_move(%(T), %(To), %(Src)) |];
+  # Fn EraseAfter(Val[Return] Erase[Write]) = [| ([&]{ auto ret = %(Val); %(Erase).stack->erase(%(Erase)); return ret; })() |];
+}
+
+Macro empty-vec-id '%air:*empty-vec*;
+Macro empty-vec sym-rd('%air:*empty-vec*);
+
+Macro r1 sym-rd('a);
+Macro r2 sym-rd('b);
+Macro r3 sym-rd('c);
+Macro r4 sym-rd('d);
+
+Macro w1 sym-wr('a 1);
+Macro w2 sym-wr('b 2);
+Macro w3 sym-wr('c 3);
+Macro w4 sym-wr('d 4);
+
+NonTerminal Const(~Fx Value:Imm Term = NullTerm);
+Rule Const($1 $2 $3) -> ApplyFx(MkConst($2 $3) $1);
+
+NonTerminal MkVec(~Fx Count:Imm Term = NullTerm);
+NonTerminal EmptyVec(~Fx Term = NullTerm);
+NonTerminal Vec(~Fx Term);
+NonTerminal Append(~Fx ~Collect);
+
+NonTerminal SymValRd(~Fx Id:Imm Term = NullTerm);
+Rule sym-rd:$1
+  -> [Pred $1.SymRdId == '%air:*empty-vec* ] EmptyVec(_ $1)
+  -> SymValRd(_ $1.SymRdId $1);
+Rule SymValRd($1 $2 $3) -> ApplyFx(If($3.Empty sym-rd($2.AsId) $3) $1);
+
+NonTerminal LAndOr(~Fx ~Collect Val:Imm = Undef Op:ExprType);
+
+NonTerminal IAddConst(~Fx Const:Imm Term Sign:I8);
+NonTerminal IMulConst(~Fx Const:Imm Term);
+NonTerminal IDivConst(~Fx Const:Imm Term);
+NonTerminal IDivConstBy(~Fx Const:Imm Term);
+
+#NonTerminal IAdd(~Fx ~Collect Const:Imm = 0);
+#NonTerminal ISub(~Fx ~Collect Const:Imm = 0 Head:Expr = NullTerm);
+#NonTerminal IMul(~Fx ~Collect Const:Imm = 1);
+#NonTerminal IDiv(~Fx ~Collect Const:Imm = 1 Head:Expr = NullTerm);
+Rule [Precedence 1] lnot:$1(lnot($ $2))
+  -> If($2.Is(lnot to_bool eq neq) || $1.Is(b_if) $2 to_bool($2));
+Rule [Precedence 1] to_bool(eq|neq|to_bool|lnot:$1( $ _)) -> $1;
+Rule [Precedence 1] lnot(^ to_bool( $ $1)) -> $1;
+Rule [Precedence 1] lnot(eq|neq:$1( $ $2 $3 )) -> Construct(If($1.Is(eq) neq eq) $2 $3);
+
+Rule land|lor|prog1($1) -> $1;
+Rule const:$1 -> Const(_ $1.ConstVal $1);
+
+
+# Rule [In lor|land, NotAtExit, Precedence 3] Const($1) $ _ -> [Pred CurTerm.Is(land) ^^ $1.IsTruthy] !Truncate;
+
+Rule lor|land|prog1|progn|nop:$1() -> Const(_ If($1.Is(lor) False If($1.Is(land) True Nil)));
+
+# TestCase "(type_assert 1 I64|F32) -> (type_assert 1 I64|F32)" type_assert(ld_const(1) I64|F32) -> type_assert(ld_const(1) I64|F32);
+
+Include "tests.air"
+Include "trs_write_expr.air"
+Include "expr_type.air"
+Include "parser.air"
+
+Include "rules/if.air"
+Include "rules/vec.air"
+Include "rules/prog.air"
+Include "rules/arithmetic.air"
+Include "rules/logic.air"
+Include "rules/until.air"

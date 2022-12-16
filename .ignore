@@ -1,0 +1,6 @@
+ext/
+subprojects/
+build_opt/
+build-opt/
+build/
+src__/

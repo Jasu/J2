@@ -1,0 +1,126 @@
+File expr-type {
+  Def TermNames = Terms.Map[It.Name];
+  Def TermNamesWithNone = TermNames.Append(Tuple("none"));
+  Def TermShortNames = Terms.Map[GetShortName(It)];
+  Def TermShortNamesWithNone = TermShortNames.Append(Tuple("none"));
+  Def MaxTermLen = MaxLength(TermNames);
+  Def MaxTermShortLen = MaxLength(TermShortNames);
+  Fn GetStyle(Term) = "st::" + Term.@DebugStyle;
+  Path "lisp/air/exprs/expr_type.hpp"
+  [
+  | #pragma once
+  | // GENERATED HEADER - EDITS WILL BE LOST.
+  | #include "strings/string_view.hpp"
+  |
+  # | namespace j::strings::inline styling { struct style; }
+  | namespace j::lisp::inline values     { struct lisp_str; }
+  | namespace j::lisp::air {
+  |   enum class expr_type : u8_t {
+  { Indent 4
+  { ForEach [Term = Terms]
+  { If [Term.DocTitle]
+  { DocComment
+  | %(Term.DocTitle)
+  { If [Term.DocBody]
+  |
+  | %(Term.DocBody)
+  }}}
+  | %((Term.Name + ",").PadRight(MaxTermLen + 1)) // %(Term.Index)
+  }}
+  |     none,
+  |   };
+  |
+  |   inline constexpr i32_t max_expr_type_len_v = %(MaxTermLen);
+  |   inline constexpr i32_t max_expr_short_name_len_v = %(MaxTermShortLen);
+  |   inline constexpr u8_t num_expr_types_v = (u8_t)expr_type::none;
+  |   inline constexpr u8_t num_expr_types_with_none_v = (u8_t)expr_type::none + 1U;
+  |
+  |   extern constinit strings::const_string_view expr_type_names[num_expr_types_with_none_v];
+  |   extern constinit strings::const_string_view expr_type_short_names[num_expr_types_with_none_v];
+  # |   extern const strings::style expr_styles[num_expr_types_with_none_v];
+  |   extern constinit const lisp_str * expr_type_lisp_names[num_expr_types_with_none_v];
+  |
+  |   J_INLINE_GETTER constexpr bool is_branch(expr_type t, u8_t i) noexcept {
+  |     return t == expr_type::do_until || t == expr_type::land || t == expr_type::lor || (t == expr_type::b_if && i > 0);
+  |   }
+  |
+  |   J_INLINE_GETTER constexpr bool has_branches(expr_type t) noexcept {
+  |     return t == expr_type::do_until || t == expr_type::land || t == expr_type::lor || t == expr_type::b_if;
+  |   }
+  |
+  |   J_INLINE_GETTER constexpr bool has_fixed_branches(expr_type t) noexcept {
+  |     return t == expr_type::do_until || t == expr_type::b_if;
+  |   }
+  |
+  |   J_INLINE_GETTER constexpr bool is_progn_like(expr_type t) noexcept {
+  |     return t == expr_type::progn || t == expr_type::let || t == expr_type::fn_body;
+  |   }
+  |
+  |   J_INLINE_GETTER constexpr bool is_lex_read(expr_type t) noexcept {
+  |     return t == expr_type::lex_rd || t == expr_type::lex_rd_bound;
+  |   }
+  |
+  |   J_INLINE_GETTER constexpr bool is_lex_write(expr_type t) noexcept {
+  |     return t == expr_type::lex_wr || t == expr_type::lex_wr_bound;
+  |   }
+  | }
+  ]
+
+  Path "lisp/air/exprs/expr_type.cpp"
+  [
+  | // GENERATED FILE - EDITS WILL BE LOST.
+  | #include "lisp/air/exprs/expr_type.hpp"
+  | #include "lisp/air/debug/debug_formatters.hpp"
+  | #include "lisp/values/static_objects.hpp"
+  | #include "strings/styling/default_styles.hpp"
+  | #include "strings/formatters/debug_enum_formatter.hpp"
+  |
+  | namespace j::lisp::air {
+  |   namespace s = j::strings;
+  |   namespace f = s::formatters;
+  |   namespace st = s::styles;
+  |   namespace {
+  { ForEach [N = TermNamesWithNone]
+  |     constinit const static_lisp_str n_%(N)("%(N)");
+  }
+  |   }
+  |
+  |   constinit strings::const_string_view expr_type_names[num_expr_types_with_none_v]{
+  { ForEach [Row = MakeRows(TermNamesWithNone.Map["\"" + It + "\","], 4)]
+  |     %(Row)
+  }
+  |   };
+  |
+  |   constinit strings::const_string_view expr_type_short_names[num_expr_types_with_none_v]{
+  { ForEach [Row = MakeRows(TermShortNamesWithNone.Map["\"" + It + "\","], 4)]
+  |     %(Row)
+  }
+  |   };
+  |
+  # |   const strings::style expr_styles[num_expr_types_with_none_v]{
+  # { ForEach [Row = MakeRows(Terms.Map[GetStyle(It) + ","].Append(Tuple("st::error,")), 4)]
+  # |     %(Row)
+  # }
+  # |   };
+  # |
+  |   constinit const lisp_str * expr_type_lisp_names[num_expr_types_with_none_v]{
+  { ForEach [Row = MakeRows(TermNamesWithNone.Map["&n_" + It + ".value,"], 4)]
+  |     %(Row)
+  }
+  |   };
+  |   namespace {
+  |     J_A(ND,NODESTROY) const f::debug_enum_entry expr_entries[]{
+  { ForEach [Row = PadTable(Terms
+    .Map[Tuple("[(u8_t)expr_type::" + It.Name + "]", "= {\"" + GetShortName(It) + "\",", GetStyle(It))]
+    .Append(Tuple(Tuple("[(u8_t)expr_type::none]", "= {\"none\",", "st::error")))).Map[Join(" ", It) + " },"]]
+  |       %(Row)
+  }
+  |     };
+  |
+  |     J_A(ND,NODESTROY) const f::debug_enum_formatter<expr_type> expr_type_fmt(expr_entries);
+  |   }
+  |
+  |   const strings::formatter_known_length<expr_type> & g_expr_type_formatter = expr_type_fmt;
+  | }
+  ]
+}

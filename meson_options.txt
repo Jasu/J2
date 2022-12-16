@@ -1,0 +1,7 @@
+option('enable-build-time-tracing', type: 'feature', value: 'disabled')
+option('enable-asan',               type: 'feature', value: 'disabled')
+option('enable-msan',               type: 'feature', value: 'disabled')
+option('enable-pprof',              type: 'feature', value: 'disabled')
+option('extensive-debug-build',     type: 'boolean', value: false)
+option('disable-no-debug',          type: 'boolean', value: false)
+option('disable-hidden-visibility', type: 'boolean', value: false)

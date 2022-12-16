@@ -1,0 +1,98 @@
+#pragma once
+
+#include "util/flags.hpp"
+
+namespace j::mem::vmem {
+  namespace detail {
+    /// Tag enum for allowing moving the page range when growing it.
+    ///
+    /// Corresponds to the MREMAP_MAYMOVE flag given to mremap.
+    enum class allow_move_tag { v };
+
+    /// Tag enum for disallowing moving the page range when growing it.
+    ///
+    /// Corresponds to the absence of the MREMAP_MAYMOVE flag given to mremap.
+    enum class disallow_move_tag { v };
+  }
+
+  /// Tag value for allowing moving the page range when growing it.
+  ///
+  /// Corresponds to the MREMAP_MAYMOVE flag given to mremap.
+  inline constexpr detail::allow_move_tag allow_move{detail::allow_move_tag::v};
+
+  /// Tag value for disallowing moving the page range when growing it.
+  ///
+  /// Corresponds to the absence of the MREMAP_MAYMOVE flag given to mremap.
+  inline constexpr detail::disallow_move_tag disallow_move{detail::disallow_move_tag::v};
+
+  /// Memory protection flags of a page range.
+  enum class protection_flag : u8_t {
+    allow_read,
+    allow_write,
+    allow_exec,
+  };
+
+
+
+  /// Memory allocation flags of a page range.
+  enum class alloc_flag : u8_t {
+    /// Do not reserve memory for the allocation.
+    ///
+    /// This allows mapping gigabytes of memory, while only paying for what is used.
+    no_reserve,
+  };
+}
+
+extern template struct j::util::flags<j::mem::vmem::protection_flag, u8_t>;
+extern template struct j::util::flags<j::mem::vmem::alloc_flag, u8_t>;
+
+namespace j::mem::vmem {
+  /// Memory protection flags of a page range.
+  using protection_flags = util::flags<protection_flag, u8_t>;
+  J_FLAG_OPERATORS(protection_flag, u8_t)
+
+  /// Protection flags allowing read-write access to a page range.
+  constexpr inline protection_flags protection_rw_v{protection_flag::allow_read, protection_flag::allow_write};
+
+  /// Protection flags allowing read-exec access to a page range.
+  constexpr inline protection_flags protection_rw_v{protection_flag::allow_read, protection_flag::allow_exec};
+
+  /// Memory allocation flags of a page range.
+  using alloc_flags = util::flags<alloc_flag, u8_t>;
+  J_FLAG_OPERATORS(alloc_flag, u8_t)
+
+  /// Empty alloc flags.
+  constexpr inline alloc_flags alloc_none_v{};
+
+  /// Alloc flags for a no-reserve allocation.
+  constexpr inline alloc_flags alloc_no_reserve_v{alloc_flag::no_reserve};
+
+  /// Map anonymous pages.
+  [[nodiscard]] J_RETURNS_NONNULL void * map(u32_t bytes, alloc_flags flags,
+                                             protection_flags prot_flags = protection_rw_v);
+
+  /// Map anonymous pages.
+  [[nodiscard]] J_RETURNS_NONNULL void * map(u32_t bytes);
+
+  /// Unmap pages.
+  void unmap(void * J_NOT_NULL page, u32_t bytes);
+
+  /// Change the protection flags of some memory pages.
+  void protect(void * J_NOT_NULL ptr, u32_t bytes, protection_flags flags);
+
+  /// Grow a memory mapping, possibly moving it.
+  [[nodiscard]] void * grow(void * J_NOT_NULL ptr, u32_t old_size, u32_t new_size, bool allow_move);
+
+  /// Grow a memory mapping, keeping it at the same address.
+  ///
+  /// \return ptr if successful, null if not.
+  [[nodiscard]] void * grow(detail::disallow_move_tag, void * J_NOT_NULL ptr, u32_t old_size, u32_t new_size);
+
+  /// Grow a memory mapping, maybe moving it to a different virtual address.
+  ///
+  /// \return ptr, or its new location.
+  [[nodiscard]] J_RETURNS_NONNULL void * grow(detail::allow_move_tag, void * J_NOT_NULL ptr, u32_t old_size, u32_t new_size);
+
+  /// Replace page at to_ptr with pages from from_ptr.
+  void replace_pages(void * J_NOT_NULL to_ptr, void * J_NOT_NULL from_ptr, u32_t bytes);
+}

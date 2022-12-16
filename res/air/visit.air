@@ -1,0 +1,56 @@
+File expr-visit {
+  Path "lisp/air/exprs/visit.hpp"
+  [
+  | #pragma once
+  | // GENERATED HEADER - EDITS WILL BE LOST.
+  | #include "lisp/air/exprs/exprs.hpp"
+  |
+  | namespace j::lisp::air::exprs {
+  { ForEach [ConstPrefix = Tuple("", "const ")]
+  |   /// Visit `%(ConstPrefix)expr *` as its real type (defined in `exprs.hpp`).
+  |   template<typename Fn, typename... Args>
+  |   J_A(ND) inline auto visit(Fn && fn, %(ConstPrefix)expr * J_NOT_NULL e, Args... args) {
+  |     switch (e->type) {
+  { ForEach [Expr = Terms]
+  |     case expr_type::%(Expr.Name):
+  |       return static_cast<Fn &&>(fn)(reinterpret_cast<%(ConstPrefix)exprs::%(Expr.Name)*>(e), args...);
+  }
+  |     case expr_type::none: J_FAIL("expr_type::none");
+  |     }
+  |   }
+  |
+  }
+  |
+  { ForEach [Expr = Terms]
+  |   /// Get `expr*` as `%(Expr.Name)*`, asserting on type mismatch.
+  |   J_A(NODISC,RNN) %(Expr.Name) * expr_as_%(Expr.Name)(expr * J_NOT_NULL e) noexcept;
+  |   /// Get `const expr*` as `const %(Expr.Name)*`, asserting on type mismatch.
+  |   J_A(NODISC,RNN,AI,ND,HIDDEN) inline const %(Expr.Name) * expr_as_%(Expr.Name)(const expr * J_NOT_NULL e) noexcept
+  |   { return expr_as_%(Expr.Name)(const_cast<expr*>(e)); }
+  |
+  }
+  |
+  | }
+  ]
+
+  Path "lisp/air/exprs/visit.cpp"
+  [
+  | // GENERATED FILE - EDITS WILL BE LOST.
+  | #include "lisp/air/exprs/visit.hpp"
+  | #include "exceptions/assert.hpp"
+  |
+  | namespace j::lisp::air::exprs {
+  |   J_A(NI) static void chk(expr * J_NOT_NULL e, expr_type type) noexcept {
+  |     J_REQUIRE(e->type == type, "Invalid expression, expected {}, got {}.", type, e->type);
+  |   }
+  |
+  { ForEach [Expr = Terms]
+  |
+  |   J_A(NODISC,RNN) %(Expr.Name) * expr_as_%(Expr.Name)(expr * J_NOT_NULL e) noexcept {
+  |     chk(e, expr_type::%(Expr.Name));
+  |     return reinterpret_cast<%(Expr.Name)*>(e);
+  |   }
+  }
+  | }
+  ]
+}

@@ -1,0 +1,58 @@
+File expr-structs {
+  Path "lisp/air/exprs/exprs.hpp"
+  [
+  | #pragma once
+  | // GENERATED HEADER - EDITS WILL BE LOST.
+  | #include "lisp/air/air_var.hpp"
+  | #include "lisp/air/exprs/expr.hpp"
+  | #include "lisp/air/exprs/quasiquote.hpp"
+  | #include "lisp/values/lisp_imm.hpp"
+  |
+  | namespace j::lisp::air::inline functions { struct air_closure; }
+  |
+  | namespace j::lisp::air::exprs {
+  { Indent
+  { Let [RawExprPtr = "this"]
+  { Let [ExprPtr = "this"]
+  { Let [ExprAccess = ""]
+  { Let [RawExprAccess = ""]
+  { ForEach [Expr = Terms]
+  |
+  | %(ExprDocCommentNoOps)
+  { If [!Expr.Members.Size]
+  | struct %(Expr.Name) final : expr { };
+  } Else {
+  | struct %(Expr.Name) final : expr {
+  { Indent 2
+  { ForEach [Op = Expr.Members]
+  | %(OpDocComment)
+  { If [Op.HasDynamicSize || Op.HasDynamicOffset]
+  { If [Op.GetterTypeName]
+  | %(Op.Type.@GetterAttr) inline %(If(Op.GetterTypeName == "input", "struct ", ""))%(Op.GetterTypeName) %(Op.Name)() noexcept {
+  { If [Op.GetterExpr]
+  |   return %(Op.GetterExpr);
+  } Else {
+  |   return *%(OpPtrByOffset);
+  }
+  | }
+  |
+  | %(OpDocComment)
+  }
+  { Let [IsConst = True]
+  | %(Op.Type.@GetterAttr) inline %(If(Op.ConstGetterTypeName == "input", "struct ", ""))%(Op.ConstGetterTypeName) %(Op.Name)() const noexcept {
+  { If [Op.ConstGetterExpr]
+  |   return %(Op.ConstGetterExpr);
+  } Else {
+  |   return *%(OpPtrByOffset);
+  }
+  | }
+  }} Else {
+  | %(If(Op.TypeName == "input", "struct ", ""))%(Op.TypeName) %(Op.Name);
+  }
+  |
+  }}
+  | };
+  }}}}}}}
+  | }
+  ]
+}

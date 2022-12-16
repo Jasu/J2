@@ -1,0 +1,13 @@
+build/
+build_opt/
+build-opt/
+*.tar.gz
+node_modules/
+doc/*.svg
+*.~undo-tree~
+perf.data
+
+# Generator scripts written in Python leave these behind.
+__pycache__/
+.gdb_history
+sphinx/source/dump

@@ -1,0 +1,11 @@
+{
+  "name": "opcodes",
+  "version": "0.0.1",
+  "description": "Opcode generator for J",
+  "main": "generate.js",
+  "author": "Jasper Mattson",
+  "license": "MIT",
+  "dependencies": {
+    "asmdb": "file:ext/asmdb"
+  }
+}

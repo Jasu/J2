@@ -1,0 +1,75 @@
+Def FormatOpDoc = [
+  { If [Op.DocTitle]
+  { Indent 4
+  | **%(Op.DocTitle)**
+  { If [Op.DocSummary]
+  |
+  | %(Op.DocSummary)
+  }
+  { If [Op.DocBody]
+  |
+  | %(Op.DocBody)
+  }}}
+  ];
+
+File layout-debug {
+  Path "../build/layout_debug.md" [
+    | # AIR expr layouts
+    { Let [ExprAccess = "this->"]
+    { Let [RawExprAccess = "this->"]
+    { ForEach [Expr = Terms]
+    { Let [NumDynInputs = If(Expr.NumInputs == 1, "this->num_inputs", "(this->num_inputs - " + (Expr.NumInputs - 1) + ")")]
+    |
+    | ## `%(Expr.Name)` - %(Expr.DocTitle)
+    { If [Expr.DocSummary]
+    |
+    | %(Expr.DocSummary)
+    }
+    { If [Expr.DocBody]
+    |
+    | %(Expr.DocBody)
+    }
+    |
+    { If [Expr.NumInputs]
+    | ### Inputs
+    |
+    { ForEach [Op = Expr.Inputs]
+    |   - *%(Op.Type.Name)* `%(Op.Name)`: %(Op.@Spec.First.Name) %(Op.@Spec.Second.Name)
+    | %(FormatOpDoc)
+    }
+    |
+    }
+    { If [Expr.NumConsts]
+    | ### Consts
+    |
+    { ForEach [Op = Expr.Consts]
+    |   - *%(Op.Type.Name)* `%(Op.Name)`
+    | %(FormatOpDoc)
+    }
+    |
+    }
+    { If [Expr.NumData]
+    | ### Data
+    |
+    { ForEach [Op = Expr.Data]
+    |   - *%(Op.Type.Name)* `%(Op.Name)`
+    | %(FormatOpDoc)
+    |
+    }
+    |
+    }
+    | ### Layout
+    |
+    { Let [NamePad = Max(11, Expr.Members.Map[It.Name.Size])]
+    { Let [SizePad = Max(4, Expr.Members.Filter[It.HasDynamicSize].Map[Op: Op.SizeExpr.Expand().Size + 2])]
+    { Let [OffsetPad = Max(6, Expr.Members.Filter[It.HasDynamicOffset].Map[1 + 4 + 3 + 5 + It.DynamicOffsetMember.Name.Size + 1 + 1])]
+    | | %("Name".PadRight(NamePad)) | %("Offset".PadRight(OffsetPad)) | %("Size".PadRight(SizePad)) |
+    | |-%("-".Repeat(NamePad))-|-%("-".Repeat(OffsetPad))-|-%("-".Repeat(SizePad))-|
+    | | %("exprs::expr".PadRight(NamePad)) | %("`0x00`".PadRight(OffsetPad)) | %(Format("`{:02}`", ExprSize).PadRight(SizePad)) |
+    { ForEach [Op = Expr.Members]
+    | | %(Op.Name.PadRight(NamePad)) | %((Format("`0x{:02X}", ExprSize + Op.StaticOffset) + If(Op.HasDynamicOffset, " + Size(" + Op.DynamicOffsetMember.Name + ")`", "`")).PadRight(OffsetPad)) | %(If(Op.HasDynamicSize, "`" + Op.SizeExpr.Expand() + "`", Format("`{:02}`", Op.Size)).PadRight(SizePad)) |
+    }}}}
+    |
+    }}}}
+  ]
+}

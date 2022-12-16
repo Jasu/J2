@@ -1,0 +1,161 @@
+%define reg_0_8  al
+%define reg_1_8  cl
+%define reg_2_8  dl
+%define reg_3_8  bl
+%define reg_4_8  spl
+%define reg_5_8  bpl
+%define reg_6_8  sil
+%define reg_7_8  dil
+%define reg_8_8  r8b
+%define reg_9_8  r9b
+%define reg_10_8 r10b
+%define reg_11_8 r11b
+%define reg_12_8 r12b
+%define reg_13_8 r13b
+%define reg_14_8 r14b
+%define reg_15_8 r15b
+
+%define reg_0_16  ax
+%define reg_1_16  cx
+%define reg_2_16  dx
+%define reg_3_16  bx
+%define reg_4_16  sp
+%define reg_5_16  bp
+%define reg_6_16  si
+%define reg_7_16  di
+%define reg_8_16  r8w
+%define reg_9_16  r9w
+%define reg_10_16 r10w
+%define reg_11_16 r11w
+%define reg_12_16 r12w
+%define reg_13_16 r13w
+%define reg_14_16 r14w
+%define reg_15_16 r15w
+
+%define reg_0_32  eax
+%define reg_1_32  ecx
+%define reg_2_32  edx
+%define reg_3_32  ebx
+%define reg_4_32  esp
+%define reg_5_32  ebp
+%define reg_6_32  esi
+%define reg_7_32  edi
+%define reg_8_32  r8d
+%define reg_9_32  r9d
+%define reg_10_32 r10d
+%define reg_11_32 r11d
+%define reg_12_32 r12d
+%define reg_13_32 r13d
+%define reg_14_32 r14d
+%define reg_15_32 r15d
+
+%define reg_0_64  rax
+%define reg_1_64  rcx
+%define reg_2_64  rdx
+%define reg_3_64  rbx
+%define reg_4_64  rsp
+%define reg_5_64  rbp
+%define reg_6_64  rsi
+%define reg_7_64  rdi
+%define reg_8_64  r8
+%define reg_9_64  r9
+%define reg_10_64 r10
+%define reg_11_64 r11
+%define reg_12_64 r12
+%define reg_13_64 r13
+%define reg_14_64 r14
+%define reg_15_64 r15
+
+%define reg(i,w) reg_ %+ i %+ _ %+ w
+
+%define width_64 qword
+%define width_32 dword
+%define width_16 word
+%define width_8 byte
+
+%define width(w) width_ %+ w
+
+%define imm_width_64 dword
+%define imm_width_32 dword
+%define imm_width_16 word
+%define imm_width_8 byte
+
+%define imm_width(w) imm_width_ %+ w
+
+%macro with_index_regs 3+
+  %assign i 0
+  %rep 16
+    %if i != 4
+      %2 reg(i, %1), %3
+    %endif
+    %assign i i+1
+  %endrep
+%endmacro
+
+%macro with_regs 2-3+
+  %assign j 0
+  %rep 16
+
+    %if %0 >= 3
+      %2 reg(j, %1), %3
+    %else
+      %2 reg(j, %1)
+    %endif
+    %assign j j+1
+  %endrep
+%endmacro
+
+%macro with_regs_2 2-3+
+  %assign k 0
+  %rep 16
+
+    %if %0 >= 3
+      %2 reg(k, %1), %3
+    %else
+      %2 reg(k, %1)
+    %endif
+    %assign k k+1
+  %endrep
+%endmacro
+
+%define mmreg(xy,i) xy %+ mm %+ i
+
+%macro with_sse_regs 2-3+
+  %assign l 0
+  %rep 16
+    %if %0 >= 3
+      %2 mmreg(%1,l), %3
+    %else
+      %2 mmreg(%1,l)
+    %endif
+    %assign l l+1
+  %endrep
+%endmacro
+
+%macro with_sse_regs_2 2-3+
+  %assign m 0
+  %rep 16
+    %if %0 >= 3
+      %2 mmreg(%1,m), %3
+    %else
+      %2 mmreg(%1,m)
+    %endif
+    %assign m m+1
+  %endrep
+%endmacro
+
+%macro with_xmm_regs 1+
+  with_sse_regs x, %1
+%endmacro
+
+%macro with_xmm_regs_2 1+
+  with_sse_regs_2 x, %1
+%endmacro
+
+%macro with_ymm_regs 1+
+  with_sse_regs y, %1
+%endmacro
+
+%macro with_ymm_regs_2 1+
+  with_sse_regs_2 y, %1
+%endmacro

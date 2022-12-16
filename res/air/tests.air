@@ -1,0 +1,166 @@
+File tests {
+  Def ExprAccess = [| %(Cur)-> |];
+  Fn EvalMatch(Match, Cur, VarName) = If(Match.Type == MatcherType.MatchTerm,
+                                         EvalMatchTerm(Match.Path, Match.Expect, Cur, VarName),
+                                         If(Match.Type == MatcherType.MatchTerms, EvalMatchTerms(Match, Cur, VarName),
+                                            EvalValEq(Match, Cur, VarName)));
+  Fn MaybeWrapGetter(Str, Target) = If(Target.HasDynamicSize || Target.HasDynamicOffset, Str + "()", Str);
+  Fn MaybeWrapTerm(Str, Target) = If(Target.Type.IsTerm, Str + ".expr", Str);
+  Fn GetChild(Str, Target) = MaybeWrapTerm(MaybeWrapGetter(Str + "->" + Target.Name, Target), Target);
+
+  Fn ToImmRaw(V) = If(V.IsCompiled, V.Value, If(V.Value.IsInt, 2 * V.Value, If(V.Value.IsId, V.Value.Raw, Imm.Create(V.Value))));
+
+  Fn EvalMatchTerm(Path, Expect, Cur, VarName) = [
+    { If [ Expect.Children.Size == 0 ]
+    | J_REQUIRE_EQ_INFO(%(Cur)->type, et::%(Expect.Term.Name), "Expected %(Path) to be %(Expect.Term.Name).");
+    } ElseIf [Expect.Term == ld_const] {
+    | assert_const(%(Cur), %(ToImmRaw(Expect.Children.First.Expect)), "%(Path)");
+    } ElseIf [Expect.Term == sym_val_wr && Expect.Children.Second.Expect.Term == ld_const] {
+    { Let [Sym  = Expect.Children.First]
+    { Let [Val  = Expect.Children.Second]
+    | assert_sym_wr(%(Cur), %(Sym.Expect.Value.Raw), %(ToImmRaw(Val.Expect.Children.First.Expect)), "%(Path)", "%(Val.Path)");
+    }}} Else {
+    | %(Expect.Term.Name) * const %(VarName) = static_cast<%(Expect.Term.Name)*>(%(Cur));
+    | J_REQUIRE_EQ_INFO(%(VarName)->type, et::%(Expect.Term.Name), "Expected %(Path) to be %(Expect.Term.Name).");
+    { ForEach [ C = Expect.Children ]
+    | %(EvalMatch(C, GetChild(VarName, C.Target), VarName + "_" + C.Target.Name))
+    }}
+    ].Expand();
+
+  Fn AssertInsLength(Match, Cur) = [| assert_inputs(%(Cur), %(Match.Expect.Size), "%(Match.Path)") |].Expand();
+  Fn EvalMatchTerms(Match, Cur, VarName) = [
+    { If [ Match.Expect.Size == 0 ]
+    | J_REQUIRE_EQ_INFO(%(Cur).size(), "Expected %(Match.Path) to be empty.");
+    } ElseIf [Match.Expect.Size == 1] {
+    | %(EvalMatch(Match.Expect.First, AssertInsLength(Match, Cur) + "[0].expr", VarName + "_0"))
+    } Else {
+    | input_span %(VarName) = %(AssertInsLength(Match, Cur));
+    { ForEach [ C = Match.Expect ]
+    | %(EvalMatch(C, Match.ValueType.ValIndexConst(VarName, C.Target), VarName + "_" + C.Target))
+    }}
+    ].Expand();
+
+  Fn EvalValEq(Match, Cur, VarName) = [
+    { If [Match.Expect.IsCompiled]
+    | J_REQUIRE_UNARY_INFO(%(Match.ValueType.ValEqVal(Cur, Match.Expect.Value)), "Expected %(Match.Path) to equal %(Match.Expect.Value)");
+    } Else {
+    | J_REQUIRE_UNARY_INFO(%(Match.ValueType.ValEqConst(Cur, Match.Expect.Value)), "Expected %(Match.Path) to equal %(Format("{}", Match.Expect.Value))");
+    }
+    ].Expand();
+
+  Path "../test/lisp/air/trs.cpp"
+  [
+  | // GENERATED FILE - EDITS WILL BE LOST.
+  | #include <detail/preamble.hpp>
+  |
+  | #include "lisp/air/exprs/exprs.hpp"
+  | #include "lisp/air/exprs/write_expr.hpp"
+  | #include "lisp/air/passes/trs_write_expr.hpp"
+  | #include "lisp/env/context.hpp"
+  | #include "lisp/env/environment.hpp"
+  | #include "lisp/packages/pkg.hpp"
+  | #include "mem/bump_pool.hpp"
+  |
+  | using namespace j;
+  | using namespace j::lisp;
+  | using namespace j::lisp::air;
+  | using namespace j::lisp::air::exprs;
+  | using j::mem::bump_pool;
+  | using et = j::lisp::air::expr_type;
+  |
+  | #define J_REQUIRE_UNARY_INFO(COND, ...) do { INFO(__VA_ARGS__); REQUIRE_UNARY(COND); } while (false)
+  | #define J_REQUIRE_EQ_INFO(A, B, ...) do { INFO(__VA_ARGS__); REQUIRE_EQ(A, B); } while (false)
+  |
+  | namespace j::lisp::air::inline passes {
+  |   void trs_simplify(bump_pool & pool, expr * J_NOT_NULL root);
+  | }
+  |
+  | namespace {
+  |   void check_inner(expr * e) {
+  |     REQUIRE_LE(e->num_inputs, e->max_inputs);
+  |     for (i32_t i = 0, max = e->num_inputs; i < max; ++i) {
+  |       expr * child = e->in_expr(i);
+  |       REQUIRE_UNARY(child);
+  |       REQUIRE_UNARY(child->parent == e);
+  |       REQUIRE_EQ(child->parent_pos, i);
+  |       check_inner(child);
+  |     }
+  |   }
+  |
+  |   void check(expr * e) {
+  |     REQUIRE_UNARY(e);
+  |     REQUIRE_UNARY(!e->parent);
+  |     REQUIRE_EQ(e->type, et::fn_body);
+  |     check_inner(e);
+  |   }
+  |
+  |   J_A(AI,MU) inline void assert_const(expr * J_NOT_NULL e, lisp_imm imm, const char * J_NOT_NULL path) {
+  |     INFO("Expected ", path, " to eq ", imm);
+  |     REQUIRE_EQ(e->type, et::ld_const);
+  |     REQUIRE_UNARY(((ld_const*)e)->const_val.eq(imm));
+  |   }
+  |
+  |   J_A(AI,MU) inline void assert_const(expr * J_NOT_NULL e, u64_t imm, const char * J_NOT_NULL path) {
+  |     assert_const(e, lisp_imm{imm}, path);
+  |   }
+  |
+  |   J_A(AI,MU,NODISC) inline input_span assert_inputs(input_span ins, u32_t size, const char * J_NOT_NULL path) {
+  |     J_REQUIRE_EQ_INFO(ins.size(), size, "Expected ", path, " to have ", size, " elements");
+  |     return ins;
+  |   }
+  |
+  |   template<typename Imm>
+  |   J_A(AI,MU) inline void assert_sym_wr(expr * J_NOT_NULL e, u32_t sym, Imm imm, const char * J_NOT_NULL path, const char * J_NOT_NULL sub_path) {
+  |     {
+  |       INFO("Expected ", path, " to be '", lisp_imm((u64_t)sym));
+  |       REQUIRE_EQ(e->type, et::sym_val_wr);
+  |       REQUIRE_EQ(((sym_val_wr*)e)->var.raw, sym);
+  |     }
+  |     assert_const(((sym_val_wr*)e)->value.expr, imm, sub_path);
+  |   }
+  |
+  |   struct J_TYPE_HIDDEN trs_fixture {
+  |     struct {
+  |       bump_pool pool;
+  |     } s;
+  |     trs_writer w;
+  |     env::environment e;
+  |     env::env_ctx_guard g;
+  |
+  |     J_A(RNN,NODISC) expr * apply_trs(expr * J_NOT_NULL in) {
+  |       expr * body = write_expr(et::fn_body, s.pool, 0, span(&in, 1), allocate_vars(0));
+  |       j::lisp::air::trs_simplify(s.pool, body);
+  |       check(body);
+  |       REQUIRE_EQ(body->num_inputs, 1);
+  |       return body->in_expr(0);
+  |     }
+  |
+  |     trs_fixture()
+  |       : w{s.pool},
+  |         g(env::env_context.enter(&e)) {
+  { ForEach [P = CreatedTestPkgs]
+  |       e.new_package("%(P)");
+  }
+  { ForEach [Pair = CreatedTestIds]
+  |       e.package_at("%(Pair.First)")->emplace_id("%(Pair.Second)");
+  }
+  |     }
+  |   };
+  | }
+  { ForEach [S = TestSuites]
+  |
+  | TEST_SUITE_BEGIN("%(S.Name)");
+  { ForEach [T = S.Tests]
+  |
+  | TEST_CASE_FIXTURE(trs_fixture, "%(T.Name)") {
+  { Indent
+  | expr * result = apply_trs(%(T.Input.Value));
+  | INFO(*result);
+  | %(EvalMatchTerm("root", T.Match, "result", "root"))
+  }
+  | }
+  }
+  | TEST_SUITE_END();
+  }
+  ]
+}

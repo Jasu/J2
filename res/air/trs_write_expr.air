@@ -1,0 +1,243 @@
+File trs-write-expr {
+  Def RawExprPtr = "e";
+  Def RawExprAccess = "e->";
+  Def BaseExprPtr = "e";
+  Def BaseExprAccess = "e->";
+
+  Fn GetTermsGrouped() = Terms.GroupBy[It.Consts.Map[It.Type]].SortBy[It.First];
+  Fn GetArgs(Args) = Args.Map[It.Second.CtorType + " " + It.First];
+  Fn GetArgsString(Args) = If(Args, Join(", ", GetArgs(Args)), "");
+  Fn ExpandDynSize(Arg, Tpl) = [| %(Tpl) |].Expand();
+  Fn GetTermSize(ConstArgs) = Join(" + ", Tuple(
+    "sizeof(expr)",
+    "num_inputs * sizeof(input)",
+    ConstArgs.Filter[!It.Second.CtorSizeExpr].Reduce[It.Second.Size + Acc; 0]
+  )
+  .Append(ConstArgs.Filter[It.Second.CtorSizeExpr].Map[ExpandDynSize(It.First, It.Second.CtorSizeExpr)])
+  .Filter[It]);
+
+  Path "lisp/air/passes/trs_write_expr.hpp" [
+    | #pragma once
+    | // GENERATED FILE - EDITS WILL BE LOST.
+    | #include "lisp/air/exprs/write_utils.hpp"
+    | #include "lisp/air/exprs/expr.hpp"
+    |
+    | namespace j::lisp::air::inline functions { struct air_closure; }
+    | namespace j::mem { class bump_pool; }
+    | namespace j::lisp::air::exprs {
+    |   struct quasi_operation;
+    |   using quasis_t = span<const quasi_operation>;
+    | }
+    | namespace j::lisp::air::inline passes {
+    { Indent
+    | using exprs::expr;
+    | using exprs::vars_init;
+    | using exprs::input;
+    | using exprs::quasis_t;
+    |
+    { ForEach [G = GetTermsGrouped()]
+    { Let [ConstArgs = G.First
+      .Map[CtorType, ArgIndex: G.Second.GroupBy[It.Ctor.At(ArgIndex).Name]]
+      .Map[Tuple(If(It.Size == 1, It.First.First, "arg" + ItIndex), G.First.At(ItIndex))]]
+    | J_A(RNN,NODISC) expr * trs_construct(expr_type type, j::mem::bump_pool & pool, u8_t num_inputs%(If(ConstArgs, ", " + GetArgsString(ConstArgs), "")));
+    }}
+    |
+    |
+    | J_A(AI,ND,HIDDEN,NODISC) inline i32_t get_in_size(expr * e) noexcept {
+    |   return e ? 1 : 0;
+    | }
+    |
+    | J_A(AI,ND,HIDDEN,NODISC) inline i32_t get_in_size(span<expr*> s) noexcept {
+    |   return s.size();
+    | }
+    |
+    | J_A(AI,ND,HIDDEN) inline void copy_in(expr * J_NOT_NULL parent, i32_t & index, expr * e) noexcept {
+    |   if (e) {
+    |     parent->set_input(index++, e);
+    |   }
+    | }
+    |
+    | J_A(AI,ND,HIDDEN) inline void copy_in(expr * J_NOT_NULL parent, i32_t & index, span<expr*> s) noexcept {
+    |   for (auto e : s) {
+    |     J_ASSERT_NOT_NULL(e);
+    |     parent->set_input(index++, e);
+    |   }
+    | }
+    |
+    | template<typename Arg>
+    | struct J_TYPE_HIDDEN const_arg_wrapper final {
+    |   using type = const Arg &;
+    | };
+    |
+    | struct J_TYPE_HIDDEN const_id_wrapper final {
+    |   J_A(AI,ND) inline const_id_wrapper(id i) noexcept : value(i) { }
+    |   J_A(AI,ND) inline const_id_wrapper(u32_t i) noexcept : value(lisp::raw_tag, i) { }
+    |   J_A(AI,ND,NODISC) inline operator id() const noexcept { return value; }
+    |   id value;
+    | };
+    |
+    | template<>
+    | struct J_TYPE_HIDDEN const_arg_wrapper<id> final {
+    |   using type = const_id_wrapper;
+    | };
+    |
+    | template<typename... ConstArgs, typename... Ins>
+    | J_A(RNN,NODISC,AI,ND,HIDDEN) inline expr * trs_wr(expr_type type, j::mem::bump_pool & pool,
+    |                                                   typename const_arg_wrapper<ConstArgs>::type ... const_args, const Ins & ... ins) {
+    |   i32_t in_size = (get_in_size(ins) + ... + 0);
+    |   expr * result = trs_construct(type, pool, in_size, const_args...);
+    |   if constexpr (sizeof...(Ins) > 0) {
+    |     i32_t index = 0;
+    |     (copy_in(result, index, ins), ...);
+    |   }
+    |   return result;
+    | }
+    |
+    | struct J_TYPE_HIDDEN trs_writer final {
+    |   j::mem::bump_pool & pool;
+    |   template<typename... ConstArgs, typename... Ins>
+    |   J_A(RNN,NODISC,AI,ND,HIDDEN) inline expr * wr(expr_type type, typename const_arg_wrapper<ConstArgs>::type... const_args, const Ins & ... ins) {
+    |     return trs_wr<ConstArgs...>(type, pool, const_args..., ins...);
+    |   }
+    |
+    |   J_A(RNN,NODISC,AI,ND,HIDDEN) inline expr * wrc(lisp_imm val) {
+    |     return trs_construct(expr_type::ld_const, pool, 0, val);
+    |   }
+    |
+    |   template<typename Num>
+    |   J_A(RNN,NODISC,AI,ND,HIDDEN) inline expr * i64(Num num) {
+    |     return trs_construct(expr_type::ld_const, pool, 0, lisp_imm{(u64_t)num << 1});
+    |   }
+    |
+    |   J_A(RNN,NODISC,AI,ND,HIDDEN) inline expr * id(u64_t num) {
+    |     return trs_construct(expr_type::ld_const, pool, 0, lisp_imm{num});
+    |   }
+    |
+    |   J_A(RNN,NODISC,AI,ND,HIDDEN) inline expr * id(lisp::id i) {
+    |     return trs_construct(expr_type::ld_const, pool, 0, lisp_imm{i});
+    |   }
+    |
+    |   template<typename Id, typename Imm>
+    |   J_A(RNN,NODISC,AI,ND,HIDDEN) inline expr * sym_wr(Id id, Imm value) {
+    |     return trs_wr<lisp::id>(expr_type::sym_val_wr, pool, id, value);
+    |   }
+    |
+    |   template<typename... Ins>
+    |   J_A(RNN,NODISC,AI,ND,HIDDEN) inline expr * progn(const Ins & ... ins) {
+    |     return trs_wr<>(expr_type::progn, pool, ins...);
+    |   }
+    | };
+    }
+    | }
+    ]
+
+  Path "lisp/air/passes/trs_write_expr.cpp" [
+    | // GENERATED FILE - EDITS WILL BE LOST.
+    | #include "trs_write_expr.hpp"
+    | #include "mem/bump_pool.hpp"
+    | #include "lisp/air/exprs/expr_init_data_map.hpp"
+    | #include "lisp/air/exprs/write_expr_impl.hpp"
+    | #include "lisp/air/exprs/exprs.hpp"
+    |
+    | namespace j::lisp::air::inline passes {
+    |   using namespace j::lisp::air::exprs;
+    { Indent
+    { ForEach [G = GetTermsGrouped()]
+    { Let [CurTerms = G.Second]
+    { Let [ConstArgs = G.First
+      .Map[CtorType, ArgIndex: G.Second.GroupBy[It.Ctor.At(ArgIndex).Name]]
+      .Map[Tuple(If(It.Size == 1, It.First.First, "arg" + ItIndex), G.First.At(ItIndex))]]
+    | J_A(RNN,NODISC) expr * trs_construct(expr_type type, j::mem::bump_pool & pool, u8_t num_inputs
+    {- If [ConstArgs]
+    | ,
+    |   %(GetArgsString(ConstArgs)))
+    -} Else {-
+    | )
+    -}
+    | {
+    { Indent
+    | const auto & d = expr_init_data_v[(u8_t)type];
+    { If [CurTerms.Some[It.Has(@ResultTypeSpecExpr) || It.Has(@ResultRepSpecExpr)]]
+    | auto result = d.result;
+    { ForEach [T = CurTerms.Filter[It.Has(@ResultTypeSpecExpr) || It.Has(@ResultRepSpecExpr)]]
+    | if (type == expr_type::%(T.Name)) {
+    { Let [Args = T.Inputs.Map[Tuple()].Append(ConstArgs.Map[Tuple(False).Append(It)])]
+    { If [T.Has(@ResultTypeSpecExpr) && T.Has(@ResultRepSpecExpr)]
+    |   result = {%([| %(T.@ResultTypeSpecExpr), %(T.@ResultRepSpecExpr) |].Expand())};
+    } ElseIf [T.Has(@ResultTypeSpecExpr)] {
+    |   result.types = %([| %(T.@ResultTypeSpecExpr) |].Expand());
+    } ElseIf [T.Has(@ResultRepSpecExpr)] {
+    |   result.reps = %([| %(T.@ResultRepSpecExpr) |].Expand());
+    }}
+    | }
+    }
+    }
+    | expr * e = ::new (pool.allocate_aligned_zero(%(GetTermSize(ConstArgs)), 8U)) exprs::expr{
+    |   .type = type,
+    |   .num_inputs = num_inputs, .max_inputs = num_inputs,
+    { If [CurTerms.Some[It.Has(@ResultTypeSpecExpr) || It.Has(@ResultRepSpecExpr)]]
+    |   .result = result,
+    } Else {
+    |   .result = d.result,
+    }
+    | };
+    |
+    | input * in = e->inputs_begin();
+    | for (u8_t i = 0; i < num_inputs; ++i, ++in) {
+    |   in->type = d.arg(i);
+    | }
+    |
+    { If [ConstArgs]
+    { If [ConstArgs.Size == 1]
+    { Let [OpTarget = "in"]
+    { Let [C = ConstArgs.First]
+    { Let [Arg = C.First]
+    { If [C.Second.Scalar]
+    | *(%(C.Second.Type)*)%(OpTarget) = %(Arg);
+    } ElseIf [C.Second.CtorStmt] {
+    | %([
+        | %(C.Second.CtorStmt)
+        ].Expand())
+    } Else {
+    | ::new (%(OpTarget)) %(C.Second.Type){%(Arg)};
+    }}}}} Else {
+    | void * to = in;
+    { ForEach [C,Idx = ConstArgs]
+    { Let [Arg = C.First]
+    { If [C.Second.Scalar]
+    | *(%(C.Second.Type)*)to = %(Arg);
+    } ElseIf [C.Second.CtorStmt] {
+    { Let [OpTarget = "to"]
+    | %([
+        | %(C.Second.CtorStmt)
+        -].Expand())
+    }} Else {
+    | ::new (to) %(C.Second.Type){%(Arg)};
+    }
+    { If [Idx != ConstArgs.Size - 1]
+    | to = add_bytes(to, C.Second.Size);
+    }}}}}
+    |
+    { Let [ExprAccess = [|reinterpret_cast<%(Term.Name)*>(e)->|]]
+    { Let [AfterConstructs = CurTerms.Filter[It.Has(@AfterConstruct)].GroupBy[Term: Term.@AfterConstruct.Expand()].SortBy[It.Second.Size]]
+    {- ForEach [Ac = AfterConstructs]
+    |
+    | // @AfterConstruct for %(Join(", ", Ac.Second.Map[It.Name]))
+    { If [Ac.Second.Size != G.Second.Size]
+    | if (%(Join(" || ", Ac.Second.Map["t == expr_type::" + It.Name]))) {
+    { Indent
+    | %(Ac.First)
+    }
+    | }
+    } Else {
+    | %(Ac.First)
+    }}}}
+    |
+    | return e;
+    }
+    | }
+    |
+    }}}}
+    | }
+    ]
+}

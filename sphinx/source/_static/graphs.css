@@ -1,0 +1,13 @@
+g:target > polygon:first-of-type {
+  stroke-width: 10px;
+  stroke: #90BFFF;
+}
+g:target > polygon:last-of-type {
+  stroke-width: 3px;
+}
+polygon {
+  shape-rendering: crispedges;
+}
+g.live-range-dump g.edge {
+  mix-blend-mode: darken;
+}

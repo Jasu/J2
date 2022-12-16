@@ -1,0 +1,537 @@
+Attr GetterAttr { DefaultGet "[[nodiscard]]" }
+Attr CtorNumInputsExpr;
+Attr CtorMaxInputsExpr;
+Attr Trivial {
+  DefaultGet False
+  DefaultSet True
+}
+
+Flags ImmType {
+  I64       0b000000000001
+  F32       0b000000000010
+  Bool      0b000000000100
+  Nil       0b000000001000
+  Sym       0b000000010000
+  FnRef     0b000000100000
+  Closure   0b000001000000
+  Str       0b000010000000
+  Vec       0b000100000000
+  Rec       0b001000000000
+
+  ActRec    0b010000000000
+  Range     0b100000000000
+
+  Any       0b111111111111
+  Imm       0b001111111111
+}
+
+
+Value EmptyVecId:Id        = "ag::id_empty_vec";
+Value NullTerm:Expr        = "nullptr";
+Value CurTerm:Expr         = "s.iter.e";
+Value CurTermType:ExprType = "s.iter.e->type";
+
+Value Nil:Imm              = "lisp_imm{nil_v}";
+Value Undef:Imm            = "lisp_imm{undefined_v}";
+
+Type CBool {
+  IsBoolType
+  Type "bool"
+  Size 1
+  Scalar True
+  DefaultValue "false"
+  DefaultName "b{}"
+  @Trivial
+  FromAttr Bool [| %(If(It, "true", "false")) |]
+
+
+  Property Neg:CBool                       = [| !%(It) |];
+  Operator =  (This[Write] Rhs:Bool)                   = [| %(This) = %(If(Rhs, "true", "false")) |];
+  Operator =  (This[Write] Rhs:CBool)                  = [| %(This) = %(Rhs) |];
+  Operator == (Rhs:Bool)                   = [| %(If(Rhs, "", "!"))%(This) |];
+  Operator != (Rhs:Bool)                   = [| %(If(Rhs, "!", ""))%(This) |];
+  Operator && (Rhs:CBool)  [Precedence 5]  = [| %(This) && %(Rhs) |];
+  Operator || (Rhs:CBool)  [Precedence 5]  = [| %(This) || %(Rhs) |];
+  Operator ^^ (Rhs:CBool)  [Precedence 5]  = [| %(This) != %(Rhs) |];
+  Operator == (Rhs:CBool)  [Precedence 10] = [| %(This) == %(Rhs) |];
+  Operator != (Rhs:CBool)  [Precedence 10] = [| %(This) != %(Rhs) |];
+}
+
+
+Type Expr {
+  Type "expr*"
+  Size 8
+  Scalar True
+  @Trivial
+
+  IsPrimaryTermType
+  DefaultValue  "nullptr"
+  DefaultName   "e{}"
+  Format        [| format_expr(%(It)); |]
+
+  From In [| %(It) |]
+
+  Property Empty:CBool                         = [| !%(It) |];
+  Property Type:ExprType                       = [| %(It)->type |];
+  Property NumInputs:U8                        = [| %(It)->num_inputs |];
+  Property Parent:Expr                         = [| %(It)->parent |];
+  Property ConstVal:Imm                        = [| *(lisp_imm*)(%(It) + 1) |];
+  Property SymRdId:Id                          = [| (*(id*)(%(It) + 1)) |];
+  Property IsEmptyVec:CBool [Precedence 10]    = [| *(id*)(%(It) + 1) == ag::id_empty_vec |];
+  Fn In(Index:U8):Expr                         = [| %(This)->in_expr(%(Index)) |];
+  Fn Is(Type:ExprType):CBool [Precedence 5]    = [| (%(This)->type == %(Type)) |];
+  Fn Is(Type:Term...):CBool [Precedence 5]     = [| (%(If(Type.Size == 1, This + "->type == " + Type.First.Name, "(" + Join(" || ", Type.Map[T:  This + "->type == " + T.Name]) + ")"))) |];
+  Fn IsNot(Type:ExprType):CBool [Precedence 5] = [| !%(This) || %(This)->type != %(Type) |];
+
+  Fn PostFx(This Fx[Consume]...):Expr = [| s.wrap_post_fx(%(This), %(Join(", ", Fx))) |];
+  Fn PreFx(This Fx[Consume]...):Expr = [| s.wrap_pre_fx(%(This), %(Join(", ", Fx))) |];
+  Operator = (Rhs) [Precedence 20] = [| %(This) = %(Rhs) |];
+}
+
+Type ExprType {
+  IsTermTypeType
+  Type "expr_type"
+  Size 1
+  Scalar True
+  DefaultName "type{}"
+  FromAttr Term [| %(It.Name) |]
+  Operator == (Rhs:ExprType):CBool [Precedence 10] = [| %(This) == %(Rhs) |];
+  Operator == (Rhs:Term):CBool [Precedence 10] = [| %(This) == et::%(Rhs.Name) |];
+  Fn Is(Type:ExprType):CBool [Precedence 10] = [| %(This) == %(Type) |];
+  Fn Is(Type:Term...):CBool [Precedence 5] = [| %(If(Type.Size == 1, This + " == " + Type.First.Name, "(" + Join(" || ", Type.Map[T: This + " == " + T.Name]) + ")")) |];
+
+  From Expr [| %(It)->type |]
+}
+
+Type I64 {
+  Type "i64_t"
+  Size 8
+  Scalar True
+
+  @Trivial
+  DefaultName "i{}"
+  DefaultValue "0"
+
+  FromAttr Int [| %(It) |]
+  From U8 [| %(It) |]
+  From Imm [| ((i64_t)%(It).raw >> 1) |]
+
+  Operator == (Rhs:I64) [Precedence 10] = [| %(This) == %(Rhs) |];
+  Operator == (Rhs:Int) [Precedence 10] = [| %(If(Rhs == 0, "!" + This, This + " == " + Rhs)) |];
+  Operator != (Rhs:I64) [Precedence 10] = [| %(This) != %(Rhs) |];
+  Operator != (Rhs:Int) [Precedence 10] = [| %(If(Rhs == 0, "(bool)" + This, This + " != " + Rhs)) |];
+
+  Operator < (Rhs:I64) [Precedence 10] = [| %(This) < %(Rhs) |];
+  Operator <= (Rhs:I64) [Precedence 10] = [| %(This) <= %(Rhs) |];
+  Operator > (Rhs:I64) [Precedence 10] = [| %(This) > %(Rhs) |];
+  Operator >= (Rhs:I64) [Precedence 10] = [| %(This) >= %(Rhs) |];
+  Operator < (Rhs:Int) [Precedence 10] = [| %(This) < %(Rhs) |];
+  Operator <= (Rhs:Int) [Precedence 10] = [| %(This) <= %(Rhs) |];
+  Operator > (Rhs:Int) [Precedence 10] = [| %(This) > %(Rhs) |];
+  Operator >= (Rhs:Int) [Precedence 10] = [| %(This) >= %(Rhs) |];
+
+  Operator += (Rhs:Imm) [Precedence 20] = [| %(This) += ((i64_t)%(Rhs).raw >> 1) |];
+  Operator -= (Rhs:Imm) [Precedence 20] = [| %(This) -= ((i64_t)%(Rhs).raw >> 1) |];
+  Operator += (Rhs:I64) [Precedence 20] = [| %(This) += %(Rhs) |];
+  Operator += (Rhs:Int) [Precedence 20] = [| %(This)%(If(Rhs == 0, "", If(Lt(Rhs, 0), " -= ", " += ") + Rhs)) |];
+  Operator -= (Rhs:I64) [Precedence 20] = [| %(This) -= %(Rhs) |];
+  Operator -= (Rhs:Int) [Precedence 20] = [| %(This)%(If(Rhs == 0, "", If(Lt(Rhs, 0), " += ", " -= ") + Rhs)) |];
+  Operator = (This[Write] Rhs:Int) [Precedence 20] = [| %(This) = %(Rhs) |];
+
+  Fn Eq(Rhs:I64):CBool  [Precedence 10] = [| %(This) == %(Rhs) |];
+  Fn Neq(Rhs:I64):CBool [Precedence 10] = [| %(This) != %(Rhs) |];
+  Fn Eq(Rhs:Int):CBool  [Precedence 10] = [| %(This) == %(Rhs) |];
+  Fn Neq(Rhs:Int):CBool [Precedence 10] = [| %(This) != %(Rhs) |];
+}
+
+Type I8 {
+  Type "i8_t"
+  Size 1
+  Scalar True
+
+  @Trivial
+  DefaultName "i{}"
+  DefaultValue "0"
+
+  FromAttr Int [| (i8_t)%(It) |]
+  From Imm [| (i8_t)(%(It).raw >> 1) |]
+
+  Operator == (Rhs:I8):CBool  [Precedence 10] = [| %(This) == %(Rhs) |];
+  Operator == (Rhs:Int):CBool [Precedence 10] = [| %(If(Rhs == 0, "!" + This, This + " == " + Rhs)) |];
+  Operator != (Rhs:I8):CBool  [Precedence 10] = [| %(This) != %(Rhs) |];
+  Operator != (Rhs:Int):CBool [Precedence 10] = [| %(If(Rhs == 0, "(bool)" + This, This + " != " + Rhs)) |];
+
+  Operator *= (This[Write] Rhs:I8) [Precedence 20] = [| %(This) *= %(Rhs) |];
+  Operator += (This[Write] Rhs:I8) [Precedence 20] = [| %(This) += %(Rhs) |];
+  Operator -= (This[Write] Rhs:I8) [Precedence 20] = [| %(This) -= %(Rhs) |];
+
+  Operator *= (This[Write] Rhs:Int) [Precedence 20] = [| %(This)%(If(Rhs == 0, " = 0", " *= " + Rhs)) |];
+  Operator += (This[Write] Rhs:Int) [Precedence 20] = [| %(This)%(If(Rhs == 0, "", " += " + Rhs)) |];
+  Operator -= (This[Write] Rhs:Int) [Precedence 20] = [| %(This)%(If(Rhs == 0, "", " -= " + Rhs)) |];
+
+  Operator *  (Rhs:I8):I8 [Precedence 2] = [| (i8_t)(%(This) * (%(Rhs))) |];
+
+  Operator * (Rhs:Int):I8 [Precedence 2] = [| (i8_t)(%(This) * (%(Rhs))) |];
+
+  Operator * (Rhs:Imm):Imm [Precedence 2] = [| lisp_imm{((u64_t)%(This)) * (%(Rhs).raw)} |];
+
+  Operator = (This[Write] Rhs:Int) [Precedence 20] = [| %(This) = %(Rhs) |];
+  Operator = (This[Write] Rhs:I8) [Precedence 20] = [| %(This) = %(Rhs) |];
+
+  Property Neg:I8 = [| (i8_t)-(%(It)) |];
+}
+
+Type TermSpan {
+  Size            16
+  Align           8
+  Type            "span<expr*>"
+  IsPrimaryTermsType
+  DefaultValue  "{}"
+  DefaultName   "terms{}"
+  Property Empty:CBool                      = [| %(It).empty() |];
+  Property Size:I64                         = [| %(It).size() |];
+  Property First:Expr                       = [| %(It).front() |];
+  Property Tail:TermSpan                    = [| %(It).without_prefix(1) |];
+  Operator == (Rhs:TermSpan) [Precedence 10] = [| %(This) == %(Rhs) |];
+  Operator + (Rhs:TermSpan):TermSpan  = [| span<expr*>(%(This).begin(), %(Rhs).end()) |];
+  Operator [] (Rhs:Int): Expr [Precedence 20] = [| %(This)[%(Rhs)] |];
+
+  From TermStack [| static_cast<span<expr*>>(%(It)) |]
+  From SplitTermStack [| static_cast<span<expr*>>(%(It)) |]
+  From SplitSpan [| (span<expr*>)%(It) |]
+  From TSSection [| static_cast<span<expr*>>(%(It)) |]
+}
+
+Type SplitSpan {
+  Size            24
+  Align           8
+  Type            "split_span"
+  IsTermsType
+  DefaultValue  "{}"
+  DefaultName   "terms{}"
+  Property Empty:CBool                      = [| %(It).empty() |];
+  Property Size:I64                         = [| %(It).size() |];
+  Property First:Expr                       = [| %(It).front() |];
+  Property Tail:TermSpan                    = [| ((span<expr*>)%(It)).without_prefix(1) |];
+
+  From SplitTermStack [| (split_span)%(It) |]
+}
+
+Type TermStack {
+  IsTermsType
+  Size            16
+  Align           8
+  Format         [| format_stack_alloc(%(It).stack, %(It).marker, 1); |]
+  Type           "term_stack_allocation"
+  DefaultName    "stk{}"
+
+  TermStack Collect {
+    DebugName "{#bright_cyan,bold}Collect{/}";
+    ExtraArg "s.collect_stack";
+  }
+
+  LifeCycleTracking {
+    Allocate Allocate;
+    Release Release;
+  }
+
+  Fn Release (This[Consume] Stack:Str):TermSpan = [| %(This).release() |];
+
+  Property Empty:CBool                       = [| !%(It) |];
+  Property Single:CBool           [Precedence 10] = [| %(It).size() == 1 |];
+  Property First:Expr            = [| %(It)[0] |];
+  Property Last:Expr                               =  [| %(It).back() |];
+
+  Operator +  (This[Return] Rhs:Expr)               [Acquire] = [| %(This).push(%(Rhs)) |];
+  Operator +  (This[Return] Rhs:TermSpan)           [Acquire] = [| %(This).push(%(Rhs)) |];
+  Operator +  (This[Consume] Rhs:TermStack[Consume]) [Acquire] = [| %(This) + %(Rhs) |];
+
+  Operator += (This[Return] Rhs:Expr)                                       = [| %(This).push(%(Rhs)) |];
+  Operator += (This[Return] Rhs:TermSpan)                                   = [| %(This).push(%(Rhs)) |];
+  Operator += (This[Return] Rhs:TermStack[Consume])                         = [| %(This) += %(Rhs) |];
+  Operator = (This[MoveDst] Rhs:TermStack[MoveSrc]) [Precedence 20] = [| %(This) = %(Rhs) |];
+  Operator -= (This[Write] Span:TermSpan)= [| %(This).stack->erase(%(Span)) |];
+}
+
+Type TSSection {
+  Size 16
+  Align 8
+  Type "tsa_section"
+  DefaultName "sec{}"
+}
+
+Type SplitTermStack {
+  IsTermsType
+
+  Size            16
+  Align           8
+  Format         [| format_stack_alloc(%(It).stack, %(It).marker, 2); |]
+  Type           "split_tsa"
+  DefaultName    "stk{}"
+
+  TermStack Fx {
+    DebugName "{#bright_yellow,bold}Side FX{/}";
+    ExtraArg "s.side_fx_stack";
+  }
+
+  LifeCycleTracking {
+    Allocate AllocateSplit;
+    Release Release;
+  }
+
+  Fn Release(This[Consume] Stack:Str):SplitSpan      = [| %(This).release() |];
+
+  Fn InsertInMiddleAsPreFx(This[Return] Span):SplitTermStack = [| %(This).insert_middle_pre_fx(%(Span)) |];
+  Fn InsertInMiddleAsPostFx(This[Return] Span):SplitTermStack = [| %(This).insert_middle_post_fx(%(Span)) |];
+  Fn AsPreFx(This[Return]):SplitTermStack           = [| %(This).to_pre_fx() |];
+  Fn AsPostFx(This[Return]):SplitTermStack          = [| %(This).to_post_fx() |];
+  Fn TakePreFx(This):TSSection                      = [| %(This).take_pre_fx() |];
+  Fn TakePostFx(This):TSSection                     = [| %(This).take_post_fx() |];
+  Fn Erase(This[Write] Span:TermSpan)                      = [| %(This).stack->erase(%(Span)) |];
+  Operator -= (This[Write] Span:TermSpan)= [| %(This).stack->erase(%(Span)) |];
+
+
+  Property Empty:CBool                              = [| !%(It) |];
+  Property Single:CBool           [Precedence 10] = [| %(It).size() == 1 |];
+  Property First:Expr                               = [| %(It)[0] |];
+  Property Last:Expr                               =  [| %(It).back() |];
+  Property PreFx:TermSpan                           = [| %(It).pre_fx() |];
+  Property PostFx:TermSpan                          = [| %(It).post_fx() |];
+  Property HasPreFx:CBool                           = [| %(It).pre_fx() |];
+  Property HasPostFx:CBool                          = [| %(It).post_fx() |];
+
+  Operator += (This[Return] Rhs:Expr):SplitTermStack = [| %(This).push(%(Rhs)) |];
+
+  Operator $+! (This[Return] Rhs:SplitTermStack[Consume]):SplitTermStack = [| split_tsa::append_fx(%(This), %(Rhs)) |];
+  Operator !+$ (This[Return] Rhs:SplitTermStack[Consume]):SplitTermStack = [| split_tsa::prepend_fx(%(This), %(Rhs)) |];
+  Operator !+$ (This[Return] Rhs:Expr):SplitTermStack = [| %(This).push(%(Rhs)) |];
+  Operator +=! (This[Return Write] Rhs:SplitTermStack[Consume]):SplitTermStack                = [| %(This).inplace_concat_fx(%(Rhs)) |];
+  Operator +=$ (This[Return Write] Rhs:SplitTermStack[Consume]):SplitTermStack                = [| %(This).inplace_concat_value(%(Rhs)) |];
+  Operator = (This[MoveDst] Rhs:SplitTermStack[MoveSrc]) [Precedence 20] = [| %(This) = %(Rhs) |];
+}
+
+
+## Single input
+InType In {
+  Size     16
+  Align    8
+  Type     "input"
+  CtorType "expr *"
+  From Expr [| %(It) |]
+  IsTermType
+}
+
+## Dynamic inputs
+InType Ins {
+  IsTermsType
+  Align           8
+  Type            "input"
+  CtorType        "inputs_init"
+  GetterType      "input_span"
+  ConstGetterType "const_input_span"
+  GetterExpr [-
+    { If [False && !Expr.NumStaticInputs]
+    | %(RawExprAccess)inputs()
+    } Else {
+    | input_span(%(DynInputsBegin), %(NumDynInputsNoParens))
+    }
+    -]
+  ConstGetterExpr [-
+    { If [False && !Expr.NumStaticInputs]
+    | %(RawExprAccess)inputs()
+    } Else {
+    | const_input_span(%(DynInputsBegin), %(NumDynInputsNoParens))
+    }
+    -]
+  @GetterAttr     [| %(If(Expr.NumStaticInputs, "[[nodiscard]]", "J_A(AI,ND,NODISC)")) |]
+  SizeExpr        [|%(MaxDynInputs) * 16U|]
+  CtorSizeExpr    [|%(Arg).num_allocated * 16U|]
+  CtorStmt        [|write_dynamic_inputs(%(DynInputsBegin), %(ArgSpec), %(RawExprPtr), %(PrototypeExpr.NumStaticInputs), %(Arg)); |]
+
+  @CtorNumInputsExpr [|%(Arg).num_allocated|]
+  @CtorMaxInputsExpr [|%(Arg).num_initialized|]
+
+  Operator [] (Rhs: Int): Term [Precedence 20] = [| %(This)[%(Rhs)].expr |];
+}
+
+## Closure info
+ConstType Closure {
+  Size 8
+  Type "air_closure*"
+  Scalar True
+  @Trivial
+}
+
+## Reference to a lexical variable
+ConstType Var {
+  Size 8
+  Type "air_var*"
+  Scalar True
+  @Trivial True
+}
+
+## Symbol id
+ConstType Id {
+  Size 4
+  Type "id"
+  IsIdType
+  @Trivial True
+  DefaultName "id{}"
+  DefaultValue "id::none"
+  Operator == (Rhs:Id) [Precedence 10] = [| %(This) == %(Rhs) |];
+  Operator != (Rhs:Id) [Precedence 10] = [| %(This) == %(Rhs) |];
+
+  Operator == (Rhs:LispId) [Precedence 10] = [| %(This).raw == %(Rhs.Raw) |];
+  Operator != (Rhs:LispId) [Precedence 10] = [| %(This).raw == %(Rhs.Raw) |];
+
+  FromAttr LispId [| id(raw_tag, %(It.Raw)) |]
+}
+
+## Lisp value
+ConstType Imm {
+  Size 8
+  Type "lisp_imm"
+
+  @Trivial True
+
+  DefaultValue  "lisp_imm{undefined_v}"
+  DefaultName   "imm{}"
+
+  Property IsUndefined:CBool = [| %(It).is_undefined() |];
+  Property HasValue:CBool    = [| !%(It).is_undefined() |];
+  Property IsI64:CBool       = [| %(It).is_i64() |];
+  Property IsTruthy:CBool    = [| (bool)%(It) |];
+  Property IsFalsy:CBool     = [| !%(It) |];
+  Property IsZero:CBool      = [| !%(It).raw |];
+  Property IsNonZero:CBool   = [| %(It).raw |];
+  Property Neg:Imm           = [| lisp_imm{(u64_t)-(%(It).raw)} |];
+  Property AsId:Id           = [| id(raw_tag, %(It).raw) |];
+
+  From I8          [| lisp_imm{(u64_t)((i64_t)%(It) << 1)} |]
+  From U8          [| lisp_imm{(u64_t)(%(It)) << 1} |]
+  From I64         [| lisp_imm{(u64_t)(%(It)) << 1} |]
+  From CBool       [| (%(It) ? lisp_t : lisp_f) |]
+  From Id          [| lisp_imm(%(It)) |]
+
+  FromAttr Bool    [| %(If(It, "lisp_t", "lisp_f")) |]
+  FromAttr Int     [| lisp_imm{%(If(Lt(It, 0), "(u64_t)", ""))%(It * 2)} |]
+  FromAttr LispId  [| lisp_imm(%(It.Raw)) |]
+
+  Operator * (Rhs:I8):Imm   [Precedence 5] = [| lisp_imm{(u64_t)(%(This).raw * (u64_t)(%(Rhs)))} |];
+
+  Operator += (Rhs:Imm)   [Precedence 20] = [| %(This).raw += %(Rhs).raw |];
+  Operator -= (Rhs:Imm)   [Precedence 20] = [| %(This).raw -= %(Rhs).raw |];
+  Operator *= (Rhs:Imm)   [Precedence 20] = [| %(This).raw *= (i64_t)%(Rhs).raw >> 1 |];
+  Operator /= (Rhs:Imm)   [Precedence 20] = [| %(This).raw /= (i64_t)%(Rhs).raw >> 1|];
+  Operator + (Rhs:Imm)   [Precedence 5] = [| lisp_imm{%(This).raw + %(Rhs).raw} |];
+  Operator - (Rhs:Imm)   [Precedence 5] = [| lisp_imm{%(This).raw - %(Rhs).raw} |];
+  Operator * (Rhs:Imm)   [Precedence 5] = [| lisp_imm{(u64_t)(%(This).raw * ((i64_t)%(Rhs).raw >> 1))} |];
+  Operator / (Rhs:Imm)   [Precedence 5] = [| lisp_imm{(u64_t)(((i64_t)%(This).raw >> 1) / ((i64_t)%(Rhs).raw >> 1)) << 1} |];
+  Operator += (Rhs:Int)   [Precedence 20] = [| %(This).raw += %(Rhs * 2) |];
+  Operator -= (Rhs:Int)   [Precedence 20] = [| %(This).raw -= %(Rhs * 2) |];
+  Operator *= (Rhs:Int)   [Precedence 20] = [| %(This).raw *= %(Rhs) |];
+  Operator /= (Rhs:Int)   [Precedence 0] = [| %(This).raw = (((i64_t)%(This).raw >> 1) / %(Rhs)) << 1 |];
+  Operator + (Rhs:Int)   [Precedence 5] = [| lisp_imm{%(This).raw + %(Rhs * 2)} |];
+  Operator - (Rhs:Int)   [Precedence 5] = [| lisp_imm{%(This).raw - %(Rhs * 2)} |];
+  Operator * (Rhs:Int)   [Precedence 1] = [| lisp_imm{(u64_t)(%(This).raw * (%(Rhs)))} |];
+  Operator / (Rhs:Int)   [Precedence 0] = [| lisp_imm{(u64_t)(((i64_t)%(This).raw >> 1) / %(Rhs)) << 1} |];
+
+  Operator == (Rhs:Id)    [Precedence 10] = [| %(This).raw == %(Rhs).raw |];
+  Operator != (Rhs:Id)    [Precedence 10] = [| %(This).raw != %(Rhs).raw |];
+  Operator == (Rhs:LispId) [Precedence 10] = [| %(This).raw == %(Rhs.Raw) |];
+  Operator != (Rhs:LispId) [Precedence 10] = [| %(This).raw != %(Rhs.Raw) |];
+  Operator == (Rhs:Imm)                   = [| %(This).eq(%(Rhs)) |];
+  Operator != (Rhs:Imm)                   = [| !%(This).eq(%(Rhs)) |];
+  Operator == (Rhs:Bool)  [Precedence 10] = [| %(This).raw == %(If(Rhs, "true_v", "false_v")) |];
+  Operator != (Rhs:Bool)  [Precedence 10] = [| %(This).raw != %(If(Rhs, "true_v", "false_v")) |];
+  Operator == (Rhs:Int)   [Precedence 10] = [| %(If(!Rhs, "!" + This + ".raw", If(Lt(Rhs, 0), "(i64_t)", "") + This + ".raw == " + (Rhs * 2))) |];
+  Operator != (Rhs:Int)   [Precedence 10] = [| %(If(!Rhs, This + ".raw", If(Lt(Rhs, 0), "(i64_t)", "") + This + ".raw != " + (Rhs * 2))) |];
+  Operator == (Rhs:CBool) [Precedence 10] = [| %(This).raw == (%(Rhs) ? true_v : false_v) |];
+  Operator != (Rhs:CBool) [Precedence 10] = [| %(This).raw != (%(Rhs) ? true_v : false_v) |];
+  Operator == (Rhs:I64)   [Precedence 10] = [| (i64_t)%(This).raw == (%(Rhs) << 1) |];
+  Operator != (Rhs:I64)   [Precedence 10] = [| (i64_t)%(This).raw != (%(Rhs) << 1) |];
+  Operator == (Rhs:U8)    [Precedence 10] = [| %(This).raw == (%(Rhs) << 1) |];
+  Operator != (Rhs:U8)    [Precedence 10] = [| %(This).raw != (%(Rhs) << 1) |];
+
+  Operator < (Rhs:Imm)    [Precedence 10] = [| (i64_t)%(This).raw < (i64_t)%(Rhs).raw |];
+  Operator <= (Rhs:Imm)   [Precedence 10] = [| (i64_t)%(This).raw <= (i64_t)%(Rhs).raw |];
+  Operator > (Rhs:Imm)    [Precedence 10] = [| (i64_t)%(This).raw > (i64_t)%(Rhs).raw |];
+  Operator >= (Rhs:Imm)   [Precedence 10] = [| (i64_t)%(This).raw >= (i64_t)%(Rhs).raw |];
+
+  Operator < (Rhs:Int)    [Precedence 10] = [| (i64_t)%(This).raw < %(Rhs) |];
+  Operator <= (Rhs:Int)   [Precedence 10] = [| (i64_t)%(This).raw <= %(Rhs) |];
+  Operator > (Rhs:Int)    [Precedence 10] = [| (i64_t)%(This).raw > %(Rhs) |];
+  Operator >= (Rhs:Int)   [Precedence 10] = [| (i64_t)%(This).raw >= %(Rhs) |];
+
+  Operator = (This[Write] Rhs:Imm) [Precedence 20] = [| %(This) = %(Rhs) |];
+}
+
+## Type mask
+ConstType U8 {
+  Size 1
+  Type "u8_t"
+  Scalar True
+  @Trivial True
+
+  DefaultValue  "0"
+  DefaultName "u{}"
+
+  FromAttr Int [| %(It) |]
+  From I64 [| %(It) |]
+}
+
+## Type mask
+ConstType ImmMask {
+  Size 2
+  Type "imm_type_mask"
+
+  ParseAs ImmType
+
+  FromAttr ImmType [| imm_type_mask((u16_t)%(It.Int)) |]
+  Operator == (Rhs:ImmMask) [Precedence 10] = [| %(This) == %(Rhs) |];
+  Operator != (Rhs:ImmMask) [Precedence 10] = [| %(This) != %(Rhs) |];
+  Operator == (Rhs:ImmType) [Precedence 10] = [| %(This).value == %(Rhs.Int) |];
+  Operator != (Rhs:ImmType) [Precedence 10] = [| %(This).value != %(Rhs.Int) |];
+}
+
+## u32_t
+ConstType U32 {
+  Size 4
+  Type "u32_t"
+  Scalar True
+  @Trivial True
+}
+
+## u64_t
+ConstType U64 {
+  Size 8
+  Type "u64_t"
+  Scalar True
+  @Trivial True
+}
+
+## Quasiquote data
+ConstType Quasis {
+  Size 16
+  Align 8
+  Type "quasis_t"
+}
+
+## Variable definitions
+ConstType VarDefs {
+  Type            "air_var_defs_t"
+  CtorType        "vars_init"
+  SizeExpr        [| air_var_defs_t::get_byte_size(%(OpRef).size()) |]
+  CtorSizeExpr    [| air_var_defs_t::get_byte_size(%(Arg).num_vars) |]
+  CtorStmt        [| write_air_var_defs(%(OpTarget), %(Arg)); |]
+  GetterType      "air_var_ptrs_t"
+  ConstGetterType "const_air_var_ptrs_t"
+  Align           8
+}
+
+## Use/Def info
+ConstType UseDefs {
+  Type "span<expr*>"
+  Size 16
+  Align 8
+}

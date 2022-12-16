@@ -1,0 +1,116 @@
+File expr-formatter {
+  Path "lisp/air/debug/expr_formatter.cpp"
+  [
+  | // GENERATED FILE - EDITS WILL BE LOST.
+  | #include "lisp/common/metadata.hpp"
+  | #include "lisp/air/debug/debug_formatters.hpp"
+  | #include "lisp/air/exprs/exprs.hpp"
+  | #include "lisp/env/debug_formatters.hpp"
+  | #include "lisp/sources/debug_formatters.hpp"
+  | #include "lisp/values/debug_formatters.hpp"
+  | #include "lisp/values/type_formatters.hpp"
+  | #include "strings/formatters/numbers.hpp"
+  | #include "strings/formatting/pad.hpp"
+  | #include "strings/styling/styled_sink.hpp"
+  |
+  | namespace j::lisp::air::inline debug {
+  |   namespace e = exprs;
+  |   namespace s = strings;
+  |
+  |   namespace {
+  |     struct J_TYPE_HIDDEN visitor final {
+  |       s::styled_sink * to = nullptr;
+  |       s::style cs{};
+  |       u32_t indent = 0U;
+  |
+  |       u32_t visit(id value) noexcept{
+  |         if (to) {
+  |           to->write(" ");
+  |           env::g_id_formatter.do_format("", value, *to, cs);
+  |         }
+  |         return 1U + env::g_id_formatter.do_get_length("", value);
+  |       }
+  |
+  |       J_A(AI,ND) u32_t visit(const air_var * J_NOT_NULL value) noexcept{
+  |         return visit(value->name);
+  |       }
+  |
+  |       u32_t visit(lisp_imm value) noexcept {
+  |         if (to) {
+  |           to->write(" ");
+  |           g_lisp_imm_formatter.do_format("", value, *to, cs);
+  |         }
+  |         return 1U + g_lisp_imm_formatter.do_get_length("", value);
+  |       }
+  |
+  |       u32_t visit(u64_t value) noexcept {
+  |         if (to) {
+  |           to->write(" ");
+  |           s::formatters::number_formatter_v<u64_t>.do_format("", value, *to, cs);
+  |         }
+  |         return 1U + s::formatters::number_formatter_v<u64_t>.do_get_length("", value);
+  |       }
+  |
+  |       u32_t visit(const imm_type_mask & value) noexcept {
+  |         if (to) {
+  |           to->write(" ");
+  |           g_imm_type_mask_formatter.do_format("", value, *to, cs);
+  |         }
+  |         return 1U + g_imm_type_mask_formatter.do_get_length("", value);
+  |       }
+  |
+  |       [[nodiscard]] u32_t newline() noexcept {
+  |         if (to) {
+  |           to->write("\\n");
+  |           s::write_spaces(*to, indent);
+  |         }
+  |         return 1U + indent;
+  |       }
+  |
+  |       u32_t visit(const exprs::expr & e) noexcept {
+  |         u32_t result = 2U + g_expr_type_formatter.do_get_length("", e.type);
+  |         if (to) {
+  |           to->write("(");
+  |           g_expr_type_formatter.do_format("", e.type, *to, cs);
+  |         }
+  |         switch (e.type) {
+  { ForEach [Term = Terms.Filter[It.Members.Some[Types(U32, U64, Imm, ImmMask, Var, Id).Includes(It.Type)]]]
+  { Let [RawExprAccess = "e."]
+  { Let [ExprAccess = "reinterpret_cast<const exprs::" + Term.Name + "&>(e)."]
+  |           case expr_type::%(Term.Name):
+  { ForEach [Op = Term.Members.Filter[Types(U32, U64, Imm, ImmMask, Var, Id).Includes(It.Type)]]
+  |             result += visit(%(OpRef));
+  }
+  |             break;
+  }}}
+  |           default:
+  |             break;
+  |         }
+  |         indent += 2U;
+  |         for (auto & in : e.inputs()) {
+  |           result += newline() + visit(*in.expr);
+  |         }
+  |         indent -= 2U;
+  |         if (to) {
+  |           to->write(")");
+  |         }
+  |         return result;
+  |       }
+  |     };
+  |
+  |     struct J_TYPE_HIDDEN air_expr_formatter final : s::formatter_known_length<exprs::expr> {
+  |       void do_format(const s::const_string_view &, const exprs::expr & e,
+  |                      s::styled_sink & to, s::style cs) const override
+  |       { visitor{&to, cs}.visit(e); }
+  |
+  |       [[nodiscard]] u32_t do_get_length(const s::const_string_view &,
+  |                                         const exprs::expr & e) const noexcept override
+  |       { return visitor{}.visit(e); }
+  |     };
+  |
+  |     J_A(ND,NODESTROY) const air_expr_formatter expr_fmt;
+  |   }
+  |   const strings::formatter_known_length<exprs::expr> & g_expr_formatter = expr_fmt;
+  | }
+  ]
+}

@@ -1,0 +1,17 @@
+File expr-size-data {
+  Path "lisp/air/exprs/expr_size_data.gen.hpp"
+  [
+  | #pragma once
+  | // GENERATED HEADER - EDITS WILL BE LOST.
+  | #include "lisp/air/exprs/expr_info.hpp"
+  |
+  | namespace j::lisp::air::exprs {
+  |   J_A(ND) constinit const expr_size_info expr_sizes_v[num_expr_types_v]{
+  { ForEach [Expr = Terms]
+  |     // %(Expr.Name)(%(Join(", ", Expr.Ctor.Map[It.Name])))
+  |     [(u8_t)expr_type::%((Expr.Name + "]").PadRight(ExprNameMaxLen + 1)) = {%(Format("{:2}U", ExprSize + Expr.StaticSize)), %(If(Expr.HasDynamicInput, "true, ", "false,")) %(Expr.NumStaticInputs), %(If(Expr.HasDynamicConst, "true ", "false"))},
+  }
+  |   };
+  | }
+  ]
+}

@@ -1,0 +1,31 @@
+Rule if(^ to_bool( $ $1)) -> $1;
+Rule [Debug] if(^ lnot($1) $ $2 $3) -> $1 $ $3 $2;
+Rule if:$1($2 Const($5 $3 $4) Const($8 $6 $7))
+  -> [Pred ($3 == False && $6 == True) || ($3 == True && $6 == False)] Construct(If($3 == True to_bool lnot) $2)
+  -> if($2 MkConst($3 $4 $5) MkConst($6 $7 $8));
+
+Rule if(Const($2 $1) $ $3 $4) -> If($1.IsTruthy $3 $4).PreFx($2);
+
+TestSuite "Lisp - AIR - TRS - If" {
+  Alias r sym_val_rd;
+  Alias w sym_val_wr;
+  Test "(if true 1 2)" if(True 1 2) -> 1;
+  Test "(if false 1 2)" if(False 1 2) -> 2;
+  Test "(if nil 1 2)" if(const(Nil) 1 2) -> 2;
+  Test "(if (progn) 1 2)" if(progn() 1 2) -> 2;
+  Test "(if (prog1) 1 2)" if(prog1() 1 2) -> 2;
+  Test "(if (to_bool x) 1 2) -> (if x 1 2)" if(to_bool(r1) 1 2) -> if(r1 1 2);
+  Test "(if (not x) 1 2) -> (if x 2 1)" if(lnot(r1) 1 2) -> if(r1 2 1);
+  Test "(if (not (not x)) 1 2) -> (if x 1 3)" if(lnot(lnot(r1)) 1 2) -> if(r1 1 2);
+
+  Test "(if (progn FX true) 1 2) -> (progn FX 1)" if(progn(w1 True) 1 2) -> progn(w1 1);
+  Test "(if (progn FX false) 1 2) -> (progn FX 2)" if(progn(w1 False) 1 2) -> progn(w1 2);
+  Test "(if (progn FX nil) 1 2) -> (progn FX 2)" if(progn(w1 const(Nil)) 1 2) -> progn(w1 2);
+
+  Test "(if (prog1 true FX) 1 2) -> (progn FX 1)" if(prog1(True w1) 1 2) -> progn(w1 1);
+  Test "(if (prog1 false FX) 1 2) -> (progn FX 2)" if(prog1(False w1) 1 2) -> progn(w1 2);
+  Test "(if (prog1 nil FX) 1 2) -> (progn FX 2)" if(prog1(const(Nil) w1) 1 2) -> progn(w1 2);
+
+  Test "(if x true false) -> (to_bool x)" if(r1 True False) -> to_bool(r1);
+  Test "(if x false true) -> (lnot x)" if(r1 False True) -> lnot(r1);
+}
